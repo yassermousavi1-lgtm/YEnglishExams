@@ -66,6 +66,8 @@
                         <button class="primary-button" style="padding: 16px;" onclick="loadExams()">📝 Exams</button>
                         <button class="primary-button" style="padding: 16px;" onclick="loadResults()">📊 Results</button>
                         <button class="primary-button" style="padding: 16px;" onclick="showAddStudent()">➕ Add Student</button>
+                        <button class="primary-button" style="padding: 16px;" onclick="showCreateExam()">📝 Create Exam</button>
+                        <button class="primary-button" style="padding: 16px;" onclick="showSendExam()">📤 Send Exam</button>
                     </div>
                     <button class="secondary-button" style="margin-top: 20px; padding: 12px 24px;" onclick="renderDashboard(USER_DATA)">🏠 Back to Dashboard</button>
                     <p style="color: #6b7280; margin-top: 30px; font-size: 14px;">More features coming soon...</p>
@@ -231,6 +233,133 @@
                 }
             } catch (error) {
                 document.getElementById('addStudentStatus').textContent = '❌ Error adding student.';
+            }
+        }
+
+        // ---------- Create Exam ----------
+        function showCreateExam() {
+            appRoot.innerHTML = `
+                <div style="padding: 20px;">
+                    <h2 style="color: #f9fafb;">📝 Create Exam</h2>
+                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
+                        <input id="examTitle" type="text" placeholder="Exam Title" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="examTimeLimit" type="number" placeholder="Time Limit (minutes)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="examQuestionIds" type="text" placeholder="Question IDs (comma separated, e.g. 1,2,3)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <button class="primary-button" style="padding: 14px;" onclick="createExam()">Create Exam</button>
+                    </div>
+                    <div id="createExamStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                </div>
+            `;
+        }
+
+        // ---------- Create Exam API ----------
+        async function createExam() {
+            const title = document.getElementById('examTitle').value.trim();
+            const timeLimit = document.getElementById('examTimeLimit').value.trim();
+            const questionIds = document.getElementById('examQuestionIds').value.trim();
+
+            if (!title || !timeLimit || !questionIds) {
+                document.getElementById('createExamStatus').textContent = '⚠️ Please fill in all fields.';
+                return;
+            }
+
+            const ids = questionIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+            if (ids.length === 0) {
+                document.getElementById('createExamStatus').textContent = '⚠️ Please enter valid question IDs.';
+                return;
+            }
+
+            document.getElementById('createExamStatus').textContent = 'Creating exam...';
+
+            try {
+                const response = await fetch('/api/teacher/exams', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        title: title,
+                        time_limit: parseInt(timeLimit),
+                        question_ids: ids
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    document.getElementById('createExamStatus').textContent = '✅ Exam created successfully! (ID: ' + data.exam_id + ')';
+                    setTimeout(() => showCreateExam(), 2000);
+                } else {
+                    document.getElementById('createExamStatus').textContent = '❌ ' + (data.message || 'Failed to create exam.');
+                }
+            } catch (error) {
+                document.getElementById('createExamStatus').textContent = '❌ Error creating exam.';
+            }
+        }
+
+        // ---------- Send Exam ----------
+        async function showSendExam() {
+            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
+            try {
+                const data = await fetchAPI('/api/teacher/assignments');
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load assignments.');
+                    return;
+                }
+                let html = `
+                    <div style="padding: 16px;">
+                        <h2 style="color: #f9fafb;">📤 Send Exam</h2>
+                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                        <div style="margin-top: 12px;">
+                `;
+                if (data.assignments.length === 0) {
+                    html += `<p style="color: #9ca3af;">No assignments found. Please assign an exam to a group first.</p>`;
+                } else {
+                    data.assignments.forEach(a => {
+                        html += `
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong style="color: #f9fafb;">${a.exam_title}</strong>
+                                    <span style="color: #9ca3af; font-size: 14px; display: block;">Group: ${a.group_name}</span>
+                                </div>
+                                <button class="primary-button" style="padding: 8px 16px;" onclick="sendExam(${a.assignment_id})">📤 Send</button>
+                            </div>
+                        `;
+                    });
+                }
+                html += `</div></div>`;
+                appRoot.innerHTML = html;
+            } catch (error) {
+                showError('Error loading assignments.');
+            }
+        }
+
+        // ---------- Send Exam API ----------
+        async function sendExam(assignmentId) {
+            const statusDiv = document.createElement('div');
+            statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af;';
+            document.querySelector('#appRoot > div').appendChild(statusDiv);
+            statusDiv.textContent = 'Sending exam...';
+
+            try {
+                const response = await fetch('/api/teacher/send_exam', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        assignment_id: assignmentId
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    statusDiv.textContent = '✅ Exam sent successfully!';
+                } else {
+                    statusDiv.textContent = '❌ ' + (data.message || 'Failed to send exam.');
+                }
+            } catch (error) {
+                statusDiv.textContent = '❌ Error sending exam.';
             }
         }
 
