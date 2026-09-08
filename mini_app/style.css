@@ -1,0 +1,618 @@
+/* ============================================================
+   YEnglish Exams
+   Student Exam Interface
+   ============================================================
+
+   Design goals:
+
+   1. Mobile-first
+   2. Comfortable inside Telegram
+   3. Dark professional interface
+   4. Clear question hierarchy
+   5. Large touch-friendly answer buttons
+   6. Minimal visual distraction
+   ============================================================ */
+
+
+* {
+    box-sizing: border-box;
+}
+
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+
+    width: 100%;
+    min-height: 100%;
+
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+}
+
+
+body {
+    background: #111827;
+
+    color: #f9fafb;
+}
+
+
+/* ============================================================
+   MAIN CONTAINER
+   ============================================================ */
+
+.app-container {
+    min-height: 100vh;
+
+    display: flex;
+
+    justify-content: center;
+
+    padding: 16px;
+}
+
+
+/* ============================================================
+   EXAM CARD
+   ============================================================ */
+
+.exam-card {
+    width: 100%;
+    max-width: 700px;
+
+    background: #1f2937;
+
+    border-radius: 20px;
+
+    padding: 24px 28px;
+
+    box-shadow:
+        0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+
+/* ============================================================
+   EXAM HEADER
+   ============================================================ */
+
+.exam-header {
+    display: flex;
+
+    justify-content: space-between;
+    align-items: center;
+
+    gap: 16px;
+
+    margin-bottom: 24px;
+}
+
+
+.exam-title-section {
+    display: flex;
+
+    align-items: center;
+
+    gap: 12px;
+
+    min-width: 0;
+}
+
+
+.exam-icon {
+    flex-shrink: 0;
+
+    width: 50px;
+    height: 50px;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    background: #111827;
+
+    border-radius: 14px;
+
+    font-size: 26px;
+}
+
+
+#examTitle {
+    margin: 0;
+
+    font-size: 22px;
+
+    font-weight: 700;
+
+    line-height: 1.3;
+
+    color: #f9fafb;
+}
+
+
+#welcomeText {
+    margin: 4px 0 0;
+
+    color: #9ca3af;
+
+    font-size: 14px;
+}
+
+
+/* ============================================================
+   TIMER
+   ============================================================ */
+
+.timer {
+    flex-shrink: 0;
+
+    min-width: 80px;
+
+    padding: 10px 14px;
+
+    background: #111827;
+
+    border-radius: 12px;
+
+    text-align: center;
+
+    font-size: 18px;
+
+    font-weight: 700;
+
+    color: #f9fafb;
+}
+
+
+.timer-warning {
+    color: #fca5a5;
+
+    background: #451a1a;
+}
+
+
+/* ============================================================
+   PROGRESS
+   ============================================================ */
+
+.progress-section {
+    margin-bottom: 28px;
+}
+
+
+.progress-info {
+    margin-bottom: 8px;
+
+    color: #9ca3af;
+
+    font-size: 14px;
+}
+
+
+.progress-bar {
+    width: 100%;
+
+    height: 8px;
+
+    overflow: hidden;
+
+    background: #374151;
+
+    border-radius: 999px;
+}
+
+
+.progress-fill {
+    width: 0;
+
+    height: 100%;
+
+    background: #2563eb;
+
+    border-radius: 999px;
+
+    transition:
+        width 0.3s ease;
+}
+
+
+/* ============================================================
+   QUESTION AREA
+   ============================================================ */
+
+.question-container {
+    margin-top: 8px;
+}
+
+
+.question-number {
+    margin-bottom: 12px;
+
+    color: #60a5fa;
+
+    font-size: 14px;
+
+    font-weight: 600;
+
+    letter-spacing: 0.5px;
+}
+
+
+.question-text {
+    margin: 0 0 28px;
+
+    color: #f9fafb;
+
+    font-size: 24px;
+
+    font-weight: 600;
+
+    line-height: 1.6;
+}
+
+
+/* ============================================================
+   OPTIONS
+   ============================================================ */
+
+.options-container {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 14px;
+}
+
+
+.option-button {
+    width: 100%;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 16px;
+
+    padding: 16px 18px;
+
+    border: 2px solid #374151;
+
+    border-radius: 16px;
+
+    background: #111827;
+
+    color: #f9fafb;
+
+    text-align: left;
+
+    cursor: pointer;
+
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        transform 0.1s ease;
+}
+
+.option-button:hover {
+    background: #1a2744;
+
+    border-color: #4b5563;
+}
+
+.option-button:active {
+    transform: scale(0.98);
+}
+
+.option-button.selected {
+    background: #172554;
+
+    border-color: #3b82f6;
+
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+
+/* ============================================================
+   OPTION LETTER
+   ============================================================ */
+
+.option-letter {
+    flex-shrink: 0;
+
+    width: 38px;
+    height: 38px;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    border: 2px solid #4b5563;
+
+    border-radius: 10px;
+
+    background: transparent;
+
+    color: #d1d5db;
+
+    font-size: 15px;
+
+    font-weight: 700;
+}
+
+
+.option-button.selected .option-letter {
+    background: #2563eb;
+
+    border-color: #2563eb;
+
+    color: white;
+}
+
+
+/* ============================================================
+   OPTION TEXT
+   ============================================================ */
+
+.option-text {
+    flex: 1;
+
+    font-size: 17px;
+
+    line-height: 1.5;
+
+    color: #e5e7eb;
+}
+
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+
+.navigation {
+    display: flex;
+
+    gap: 14px;
+
+    margin-top: 32px;
+}
+
+
+.navigation button {
+    min-height: 52px;
+
+    border: none;
+
+    border-radius: 14px;
+
+    font-size: 16px;
+
+    font-weight: 600;
+
+    cursor: pointer;
+
+    transition: background 0.2s ease;
+}
+
+
+.primary-button {
+    flex: 1;
+
+    background: #2563eb;
+
+    color: white;
+}
+
+
+.primary-button:hover {
+    background: #1d4ed8;
+}
+
+.primary-button:active {
+    transform: scale(0.97);
+}
+
+
+.secondary-button {
+    flex: 0 0 130px;
+
+    background: #374151;
+
+    color: #f9fafb;
+}
+
+
+.secondary-button:hover {
+    background: #4b5563;
+}
+
+
+.navigation button:disabled {
+    opacity: 0.4;
+
+    cursor: not-allowed;
+
+    transform: none;
+}
+
+
+/* ============================================================
+   STATUS
+   ============================================================ */
+
+.status {
+    min-height: 24px;
+
+    margin-top: 18px;
+
+    color: #9ca3af;
+
+    text-align: center;
+
+    font-size: 14px;
+}
+
+
+/* ============================================================
+   RESULT BOX
+   ============================================================ */
+
+.result-box {
+    text-align: center;
+
+    padding: 30px 20px;
+
+    background: #111827;
+
+    border-radius: 16px;
+
+    border: 2px solid #374151;
+}
+
+.result-box h2 {
+    margin: 0 0 12px;
+
+    color: #60a5fa;
+
+    font-size: 22px;
+}
+
+.result-score {
+    font-size: 48px;
+
+    font-weight: 800;
+
+    color: #f9fafb;
+}
+
+.result-percentage {
+    margin-top: 8px;
+
+    font-size: 28px;
+
+    font-weight: 700;
+
+    color: #34d399;
+}
+
+
+/* ============================================================
+   RESPONSIVE - MOBILE
+   ============================================================ */
+
+@media (max-width: 600px) {
+
+    .app-container {
+        padding: 10px;
+    }
+
+    .exam-card {
+        padding: 16px;
+
+        border-radius: 16px;
+    }
+
+    .exam-icon {
+        width: 42px;
+        height: 42px;
+
+        font-size: 22px;
+    }
+
+    #examTitle {
+        font-size: 19px;
+    }
+
+    .question-text {
+        font-size: 20px;
+    }
+
+    .option-button {
+        padding: 14px;
+
+        gap: 14px;
+    }
+
+    .option-letter {
+        width: 34px;
+        height: 34px;
+
+        font-size: 14px;
+    }
+
+    .option-text {
+        font-size: 15px;
+    }
+
+    .secondary-button {
+        flex: 0 0 100px;
+    }
+
+    .result-score {
+        font-size: 38px;
+    }
+}
+
+
+@media (max-width: 400px) {
+
+    .exam-card {
+        padding: 12px;
+    }
+
+    .exam-header {
+        gap: 8px;
+    }
+
+    .exam-icon {
+        width: 36px;
+        height: 36px;
+
+        font-size: 18px;
+    }
+
+    #examTitle {
+        font-size: 16px;
+    }
+
+    .question-text {
+        font-size: 18px;
+    }
+
+    .option-button {
+        padding: 12px;
+
+        gap: 10px;
+    }
+
+    .option-letter {
+        width: 30px;
+        height: 30px;
+
+        font-size: 12px;
+    }
+
+    .option-text {
+        font-size: 14px;
+    }
+
+    .primary-button,
+    .secondary-button {
+        font-size: 14px;
+        min-height: 44px;
+    }
+
+    .secondary-button {
+        flex: 0 0 85px;
+    }
+
+    .timer {
+        font-size: 15px;
+        min-width: 65px;
+        padding: 8px 10px;
+    }
+}

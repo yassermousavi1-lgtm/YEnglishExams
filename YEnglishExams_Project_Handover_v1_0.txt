@@ -1,0 +1,798 @@
+YENGLISH EXAMS
+PROJECT HANDOVER AND DEVELOPMENT SPECIFICATION
+Version: MVP v1.0
+
+PURPOSE
+-------
+This document is a complete handover specification for another AI developer. It explains the project, architecture, current implementation, operational workflow, security model, development principles, and future roadmap.
+
+1. PROJECT OVERVIEW
+------------------
+YEnglish Exams is a Telegram-based English examination system for private English classes. Students do not need a separate application.
+
+Core flow:
+
+Teacher
+  -> AI-generated questions
+  -> Question Bank
+  -> Exam Creation
+  -> Exam Assignment
+  -> Telegram Class Group
+  -> Student
+  -> Telegram Mini App
+  -> Flask API
+  -> SQLite database
+  -> Server-side grading
+  -> Result storage
+  -> Private teacher Telegram notification
+
+The current MVP has been tested end-to-end in Telegram.
+
+2. MAIN GOAL
+------------
+The system should allow a teacher to:
+
+- Maintain a reusable question bank.
+- Import batches of AI-generated four-option MCQs.
+- Create exams from existing questions.
+- Assign exams to Telegram groups.
+- Send exams to Telegram groups.
+- Let students open exams inside Telegram.
+- Authenticate students automatically through Telegram.
+- Grade exams automatically on the server.
+- Store results.
+- Receive each student's result privately in Telegram.
+
+Students should be able to:
+
+- Open an assigned exam.
+- See their name.
+- Answer one question at a time.
+- Move backward and forward.
+- See progress.
+- See a countdown timer.
+- Submit the exam.
+- Immediately see their result.
+
+3. TECHNOLOGY STACK
+-------------------
+Operating system:
+Windows
+
+Python:
+3.13.15
+
+Python executable:
+C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe
+
+Backend:
+Flask
+
+Database:
+SQLite
+
+Database:
+exam.db
+
+Frontend:
+HTML, CSS, Vanilla JavaScript
+
+Platform:
+Telegram Bot API and Telegram Mini Apps
+
+Public HTTPS tunnel during development:
+ngrok
+
+Project folder:
+C:\Users\Yasser Mousavi\Desktop\YEnglishExams
+
+4. ARCHITECTURE
+---------------
+A single Flask server provides both the Mini App and API.
+
+Telegram
+   |
+   v
+ngrok HTTPS
+   |
+   v
+Flask :5000
+   |----------------------|
+   v                      v
+Mini App                 API
+/                       /api/...
+                           |
+                           v
+                        exam.db
+
+This replaced an earlier architecture that used a separate Mini App server on port 8000 and API server on port 5000. The single-server architecture is simpler and avoids unnecessary CORS complexity.
+
+5. DATABASE
+----------
+The approved MVP database contains seven tables:
+
+1. students
+2. groups
+3. questions
+4. exams
+5. exam_questions
+6. results
+7. exam_assignments
+
+students:
+- id
+- telegram_user_id
+- first_name
+- last_name
+- username
+- group_id
+
+Each student belongs to exactly one group in the current MVP.
+
+groups:
+- id
+- telegram_group_id
+- name
+
+questions:
+- id
+- question_text
+- option_a
+- option_b
+- option_c
+- option_d
+- correct_answer
+
+correct_answer is server-side data and must never be returned by the student questions endpoint.
+
+exams:
+- id
+- title
+- time_limit
+
+exam_questions:
+- id
+- exam_id
+- question_id
+- question_order
+
+question_order preserves the teacher's selected exam order.
+
+results:
+- id
+- student_id
+- exam_id
+- score
+- total_questions
+- started_at
+- completed_at
+
+exam_assignments:
+- id
+- exam_id
+- group_id
+- assigned_at
+
+6. FILES AND RESPONSIBILITIES
+-----------------------------
+
+database.py
+Purpose:
+Creates and initializes the SQLite schema.
+
+Important:
+The database file is exam.db. Do not accidentally switch to journal.db.
+
+api.py
+Purpose:
+Central Flask application.
+
+Responsibilities:
+- Serve Mini App at /
+- Health check at /api
+- Validate Telegram Mini App initData
+- Identify the registered student
+- Check group-based exam access
+- Return exam questions without correct answers
+- Receive submitted answers
+- Grade on the server
+- Save results
+- Notify the teacher privately through Telegram
+
+Important endpoints:
+
+GET /
+Serves mini_app/index.html
+
+GET /api
+Backend health check.
+
+GET /api/me
+Authenticates Telegram initData from the HTTP header:
+X-Telegram-Init-Data
+
+GET /api/exam/<exam_id>
+Returns basic exam information after authentication and access checking.
+
+GET /api/exam/<exam_id>/questions
+Returns exam title, time limit, question order, question text, and A/B/C/D options.
+It must NOT return correct_answer.
+
+POST /api/exam/submit
+Receives:
+- exam_id
+- answers
+- started_at
+
+The server:
+1. Authenticates Telegram.
+2. Finds the registered student.
+3. Checks group access.
+4. Loads official answers from SQLite.
+5. Calculates the score.
+6. Saves the result.
+7. Commits the database transaction.
+8. Sends a private Telegram message to the teacher.
+9. Returns the result to the student.
+
+mini_app/index.html
+Purpose:
+Student-facing Telegram Mini App.
+
+Responsibilities:
+- Initialize Telegram WebApp
+- Read Telegram initData
+- Read the exam start parameter
+- Authenticate through /api/me
+- Load the exam
+- Display one question at a time
+- Display four options
+- Remember selected answers locally
+- Previous/Next navigation
+- Progress bar
+- Countdown timer
+- Submit answers
+- Display returned result
+
+The frontend must never calculate authoritative correctness and must never contain the answer key.
+
+mini_app/style.css
+Purpose:
+Dark, professional, mobile-first exam UI.
+
+Features:
+- Dark theme
+- Responsive layout
+- Large touch-friendly option buttons
+- Selected-answer state
+- Progress bar
+- Timer
+- Result display
+- Suitable for Telegram mobile screens
+
+question_parser.py
+Purpose:
+Parses AI-generated question batches.
+
+Supported format:
+
+id="abc123"
+
+[QUESTION]
+She _____ to school every day.
+[A] go
+[B] goes
+[C] going
+[D] gone
+[ANSWER] B
+
+It extracts question text, options A-D, and the correct answer.
+
+import_questions.py
+Purpose:
+Imports parsed questions into the question bank.
+
+add_question.py
+Purpose:
+Manual question insertion utility used during development.
+
+create_exam.py
+Purpose:
+Creates exams and attaches selected questions in a chosen order.
+
+assign_exam.py
+Purpose:
+Assigns an exam to a group.
+
+add_group.py
+Purpose:
+Registers Telegram groups/classes.
+
+add_student.py
+Purpose:
+Registers Telegram students and associates them with a group.
+
+send_exam.py
+Purpose:
+Sends an exam announcement to a Telegram group with a Start Exam button.
+
+test_submit.py
+Purpose:
+Development-only submission API testing.
+
+button_test_bot.py
+Purpose:
+Development-only test for Telegram button callbacks.
+
+7. TELEGRAM WORKFLOW
+--------------------
+Teacher creates an exam.
+Teacher assigns the exam to a group.
+Teacher sends the exam announcement.
+Student taps Start Exam.
+Telegram opens the Mini App.
+Telegram supplies initData.
+Mini App sends initData to Flask.
+Flask verifies the Telegram signature.
+Flask identifies the student.
+Flask checks whether the student's group has access.
+Flask returns questions without answer keys.
+Student completes the exam.
+Mini App submits answers.
+Flask grades the answers.
+Flask stores the result.
+Flask sends the teacher a private result message.
+Student sees the result.
+
+8. SECURITY MODEL
+-----------------
+The following rules are fundamental.
+
+1. Never trust student_id from browser input.
+The server derives the student from validated Telegram initData.
+
+2. Never send correct_answer to the Mini App.
+
+3. Never perform authoritative grading in JavaScript.
+The server must compare answers against SQLite.
+
+4. Always check exam access on the server.
+Knowing an exam_id must not automatically grant access.
+
+5. Keep secrets outside source code.
+At minimum:
+TELEGRAM_BOT_TOKEN
+TEACHER_TELEGRAM_ID
+
+6. Never place the bot token in index.html or any client-side JavaScript.
+
+7. Save and commit the result before attempting teacher notification.
+A Telegram notification failure must not erase a valid exam result.
+
+9. ENVIRONMENT VARIABLES
+-----------------------
+Required:
+
+TELEGRAM_BOT_TOKEN
+TEACHER_TELEGRAM_ID
+
+PowerShell example:
+
+$env:TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN"
+$env:TEACHER_TELEGRAM_ID="YOUR_TELEGRAM_ID"
+
+Never share the actual bot token in chat, documentation, screenshots, or public repositories.
+
+10. HOW TO RUN
+--------------
+1. Open PowerShell.
+
+2. Go to:
+
+cd "C:\Users\Yasser Mousavi\Desktop\YEnglishExams"
+
+3. Install dependencies:
+
+C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe -m pip install flask requests
+
+4. Set environment variables:
+
+$env:TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN"
+$env:TEACHER_TELEGRAM_ID="YOUR_TELEGRAM_ID"
+
+5. Start Flask:
+
+C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe api.py
+
+Expected local server:
+http://127.0.0.1:5000/
+
+6. In another PowerShell window:
+
+ngrok http 5000
+
+7. Use the HTTPS forwarding URL as the Telegram Mini App URL.
+
+Telegram deep-link pattern:
+
+https://t.me/YEnglsihExamsbot?startapp=exam_2
+
+Replace exam_2 with the required exam ID.
+
+IMPORTANT:
+Do not replace the existing populated exam.db with an empty database.
+
+11. CURRENT TEST DATA
+---------------------
+Telegram bot:
+@YEnglsihExamsbot
+
+Test group:
+Test's English class
+
+Group Telegram ID:
+-5496449839
+
+Test student:
+Yasser
+
+Test student Telegram ID:
+231716006
+
+Test student database ID:
+1
+
+Test group database ID:
+1
+
+Test exam:
+ID 2
+Title: Present Simple Test
+Time limit: 15 minutes
+
+Questions:
+ID 1:
+She _____ to school every day.
+A go
+B goes
+C going
+D gone
+
+ID 3:
+I _____ my homework yesterday.
+A do
+B does
+C did
+D doing
+
+ID 4:
+They _____ playing football now.
+A is
+B are
+C was
+D be
+
+Current assignment:
+Exam 2 -> Group 1
+
+12. AI QUESTION GENERATION WORKFLOW
+-----------------------------------
+The teacher provides lesson material to an AI.
+
+The AI generates four-option MCQs.
+
+The teacher copies the generated batch.
+
+question_parser.py converts the text into structured questions.
+
+import_questions.py stores them in the question bank.
+
+The question bank is then used to build exams.
+
+Conceptual pipeline:
+
+AI
+ -> Question Parser
+ -> Question Bank
+ -> Exam Builder
+ -> Telegram Group
+ -> Student Mini App
+ -> Flask
+ -> Result
+
+This separation should be preserved.
+
+13. CURRENT MVP LIMITATIONS
+---------------------------
+The MVP intentionally does not yet include:
+
+- Full graphical teacher panel
+- Graphical question-bank management
+- Graphical exam builder
+- Graphical group management
+- Graphical student management
+- Advanced analytics
+- Multiple-attempt policy
+- Advanced anti-cheating controls
+- Strict server-side exam timing
+- Duplicate submission policy
+- Per-question review
+- Answer explanations
+- Question tags
+- Skill/level metadata
+- Advanced scheduling
+- Student history dashboard
+
+These features should not be added prematurely.
+
+The teacher wants to use the MVP in real classes first and learn which features are actually necessary.
+
+14. FUTURE DEVELOPMENT ROADMAP
+------------------------------
+
+PHASE 1 - STABILIZATION
+Use the MVP with real students.
+
+Monitor:
+- authentication reliability
+- exam access
+- submission reliability
+- timer behavior
+- score accuracy
+- database integrity
+- teacher notifications
+- network interruption
+- accidental duplicate submissions
+
+Fix real problems before adding major features.
+
+PHASE 2 - TEACHER MINI APP
+Build a teacher panel inside Telegram.
+
+Possible sections:
+- Dashboard
+- Groups
+- Students
+- Question Bank
+- Exams
+- Assignments
+- Results
+
+Goal:
+The teacher should eventually perform all administrative tasks without running Python helper scripts.
+
+PHASE 3 - QUESTION BANK UI
+Add:
+- Add question
+- Edit question
+- Delete question
+- Search
+- Select questions
+- Import AI question batches
+
+Keep the existing AI parser compatible.
+
+PHASE 4 - EXAM BUILDER
+Teacher should be able to:
+- Create title
+- Set time limit
+- Select questions
+- Arrange order
+- Save exam
+- Assign exam to groups
+- Send exam
+
+PHASE 5 - RESULTS
+Teacher results page:
+- Student
+- Exam
+- Score
+- Percentage
+- Date/time
+- Completion time
+
+Later:
+- Per-question performance
+- Student history
+- Exam averages
+- Class performance
+- Question performance
+
+PHASE 6 - SERVER-SIDE ATTEMPT TIMING
+Currently the browser countdown is primarily a UI mechanism.
+
+Future design:
+Server records start time.
+Server calculates elapsed time.
+Server decides whether submission is within the allowed duration.
+
+PHASE 7 - DUPLICATE SUBMISSION CONTROL
+Define a formal attempt policy.
+
+If one-attempt-only is desired, enforce it safely at the database/service level.
+
+If multiple attempts are later required, introduce a dedicated attempts model rather than overloading results.
+
+PHASE 8 - MORE QUESTION TYPES
+Possible future types:
+- True/False
+- Matching
+- Fill in the blank
+- Ordering
+- Vocabulary
+- Listening
+- Reading comprehension
+
+Each new question type needs an explicit data model before implementation.
+
+PHASE 9 - ANALYTICS
+Possible analytics:
+- Student performance
+- Question performance
+- Exam performance
+- Class performance
+- Historical improvement
+
+Only add analytics after the underlying data model is stable.
+
+15. RECOMMENDED LONG-TERM ARCHITECTURE
+-------------------------------------
+When the project becomes larger, responsibilities can be separated:
+
+Telegram Bot
+ -> announcements
+ -> commands
+ -> notifications
+
+Telegram Mini App
+ -> Student UI
+ -> Teacher UI
+
+Flask API
+ -> authentication
+ -> authorization
+ -> exam service
+ -> submission service
+ -> grading service
+ -> result service
+ -> question service
+
+Database
+ -> SQLite initially
+ -> PostgreSQL only if real scale requires it
+
+Do not prematurely refactor the MVP.
+
+16. CODING RULES FOR THE NEXT AI
+--------------------------------
+The next AI developer must:
+
+1. Read complete current files before modifying them.
+2. Never guess unseen code.
+3. Preserve working functionality.
+4. Avoid rewriting the whole project for small changes.
+5. Explain database migrations before changing schema.
+6. Never silently delete data.
+7. Never replace exam.db with an empty database.
+8. Keep correct_answer server-side.
+9. Keep grading server-side.
+10. Keep Telegram authentication server-side.
+11. Keep secrets out of frontend files.
+12. Test backend changes independently.
+13. Prefer complete replacement files when appropriate because the project owner is not a programmer.
+14. Give exact Windows PowerShell commands.
+15. State exactly which file is being changed.
+16. Work sequentially rather than giving many unrelated steps.
+17. Preserve the current database unless migration is required.
+18. Put meaningful architecture comments in important code so future developers understand why the code exists.
+
+17. ERROR HANDLING
+-----------------
+Student-facing errors should be simple:
+
+"Telegram authentication failed."
+"Your Telegram account is not registered as a student."
+"You do not have access to this exam."
+"Exam not found."
+"Could not load the exam."
+"Could not submit the exam."
+
+Do not expose internal database errors or credentials.
+
+18. RESULT DATA FLOW
+--------------------
+Example submitted answers:
+
+{
+    "1": "B",
+    "3": "C",
+    "4": "B"
+}
+
+The browser does not submit a score.
+
+The server loads official answers from SQLite and calculates the score.
+
+For three questions:
+3 correct = 3/3
+2 correct = 2/3
+1 correct = 1/3
+0 correct = 0/3
+
+The result is stored in results and the teacher is notified privately.
+
+19. DEFINITION OF FINAL MVP v1.0
+--------------------------------
+The MVP is considered complete when a registered student in an assigned Telegram group can:
+
+1. Receive an exam.
+2. Open it inside Telegram.
+3. Be authenticated automatically.
+4. Access only assigned exams.
+5. Answer questions.
+6. Submit.
+7. Be graded by the server.
+8. Have the result stored.
+9. See the result.
+10. Trigger a private teacher result notification.
+
+A graphical teacher panel is not required for MVP v1.0.
+
+Python helper scripts can remain the administrative interface during the initial real-world usage period.
+
+20. HANDOVER CHECKLIST
+----------------------
+Before adding new functionality, verify:
+
+[ ] Project path is correct.
+[ ] Python version is correct.
+[ ] exam.db exists.
+[ ] Database schema is understood.
+[ ] api.py is the active Flask server.
+[ ] Mini App is under mini_app/.
+[ ] Flask serves the Mini App.
+[ ] /api/me authenticates Telegram.
+[ ] Exam access is group-based.
+[ ] correct_answer is absent from the student question response.
+[ ] /api/exam/submit grades on the server.
+[ ] results are stored.
+[ ] teacher notification works.
+[ ] bot token is stored securely.
+[ ] ngrok forwards to port 5000.
+
+21. IMPORTANT SECURITY WARNING
+------------------------------
+The Telegram bot token is a credential.
+
+If the token has ever been exposed during development, regenerate it through Telegram's bot management system before long-term production use.
+
+Then place the replacement token only in the server environment variable.
+
+Never put it in:
+- index.html
+- JavaScript
+- public documentation
+- screenshots
+- source repositories
+
+22. FINAL DEVELOPMENT PRINCIPLE
+-------------------------------
+The project should evolve from a working educational tool rather than from an abstract software specification.
+
+The most important loop is:
+
+Telegram
+ -> Authentication
+ -> Exam
+ -> Answers
+ -> Server Grading
+ -> Result
+ -> Teacher Notification
+
+Every future feature must preserve this loop.
+
+Do not add complexity merely because it is technically possible.
+
+First use the MVP in real classes. Then let real classroom usage determine what should be built next.
+
+END OF HANDOVER DOCUMENT
