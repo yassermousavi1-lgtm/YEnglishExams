@@ -54,23 +54,199 @@
         // RENDER FUNCTIONS
         // ============================================================
 
-        function renderTeacherDashboard(userData) {
+        // ---------- Dashboard ----------
+        function renderDashboard(userData) {
             appRoot.innerHTML = `
                 <div style="text-align: center; padding: 20px;">
                     <div style="font-size: 48px; margin-bottom: 10px;">👨‍🏫</div>
                     <h1 style="color: #f9fafb;">Teacher Panel</h1>
                     <p style="color: #9ca3af;">Welcome, ${userData.telegram_user.first_name}!</p>
                     <div style="margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <button class="primary-button" style="padding: 16px;" onclick="alert('Students list coming soon!')">👥 Students</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="alert('Exams list coming soon!')">📝 Exams</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="alert('Results coming soon!')">📊 Results</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="alert('Add student coming soon!')">➕ Add Student</button>
+                        <button class="primary-button" style="padding: 16px;" onclick="loadStudents()">👥 Students</button>
+                        <button class="primary-button" style="padding: 16px;" onclick="loadExams()">📝 Exams</button>
+                        <button class="primary-button" style="padding: 16px;" onclick="loadResults()">📊 Results</button>
+                        <button class="primary-button" style="padding: 16px;" onclick="showAddStudent()">➕ Add Student</button>
                     </div>
+                    <button class="secondary-button" style="margin-top: 20px; padding: 12px 24px;" onclick="renderDashboard(USER_DATA)">🏠 Back to Dashboard</button>
                     <p style="color: #6b7280; margin-top: 30px; font-size: 14px;">More features coming soon...</p>
                 </div>
             `;
         }
 
+        // ---------- Students List ----------
+        async function loadStudents() {
+            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading students...</p></div>`;
+            try {
+                const data = await fetchAPI('/api/teacher/students');
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load students.');
+                    return;
+                }
+                let html = `
+                    <div style="padding: 16px;">
+                        <h2 style="color: #f9fafb;">👥 Students (${data.total})</h2>
+                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                        <div style="margin-top: 12px;">
+                `;
+                if (data.students.length === 0) {
+                    html += `<p style="color: #9ca3af;">No students registered yet.</p>`;
+                } else {
+                    data.students.forEach(s => {
+                        html += `
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                                <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
+                                <span style="color: #9ca3af; font-size: 14px; display: block;">Group: ${s.group_name}</span>
+                            </div>
+                        `;
+                    });
+                }
+                html += `</div></div>`;
+                appRoot.innerHTML = html;
+            } catch (error) {
+                showError('Error loading students.');
+            }
+        }
+
+        // ---------- Exams List ----------
+        async function loadExams() {
+            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
+            try {
+                const data = await fetchAPI('/api/teacher/exams');
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load exams.');
+                    return;
+                }
+                let html = `
+                    <div style="padding: 16px;">
+                        <h2 style="color: #f9fafb;">📝 Exams (${data.total})</h2>
+                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                        <div style="margin-top: 12px;">
+                `;
+                if (data.exams.length === 0) {
+                    html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
+                } else {
+                    data.exams.forEach(e => {
+                        html += `
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                                <strong style="color: #f9fafb;">${e.title}</strong>
+                                <span style="color: #9ca3af; font-size: 14px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                            </div>
+                        `;
+                    });
+                }
+                html += `</div></div>`;
+                appRoot.innerHTML = html;
+            } catch (error) {
+                showError('Error loading exams.');
+            }
+        }
+
+        // ---------- Results List ----------
+        async function loadResults() {
+            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
+            try {
+                const data = await fetchAPI('/api/teacher/results');
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load results.');
+                    return;
+                }
+                let html = `
+                    <div style="padding: 16px;">
+                        <h2 style="color: #f9fafb;">📊 Results (${data.total})</h2>
+                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                        <div style="margin-top: 12px;">
+                `;
+                if (data.results.length === 0) {
+                    html += `<p style="color: #9ca3af;">No results yet.</p>`;
+                } else {
+                    data.results.forEach(r => {
+                        html += `
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                                <strong style="color: #f9fafb;">${r.student_name}</strong>
+                                <span style="color: #60a5fa; display: block;">${r.exam_title}</span>
+                                <span style="color: #34d399; font-weight: 600;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
+                            </div>
+                        `;
+                    });
+                }
+                html += `</div></div>`;
+                appRoot.innerHTML = html;
+            } catch (error) {
+                showError('Error loading results.');
+            }
+        }
+
+        // ---------- Add Student Form ----------
+        function showAddStudent() {
+            appRoot.innerHTML = `
+                <div style="padding: 20px;">
+                    <h2 style="color: #f9fafb;">➕ Add Student</h2>
+                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
+                        <input id="studentFirstName" type="text" placeholder="First Name" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="studentLastName" type="text" placeholder="Last Name (optional)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="studentTelegramId" type="text" placeholder="Telegram User ID" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="studentGroupId" type="text" placeholder="Group ID" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <button class="primary-button" style="padding: 14px;" onclick="addStudent()">Add Student</button>
+                    </div>
+                    <div id="addStudentStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                </div>
+            `;
+        }
+
+        // ---------- Add Student API ----------
+        async function addStudent() {
+            const firstName = document.getElementById('studentFirstName').value.trim();
+            const lastName = document.getElementById('studentLastName').value.trim();
+            const telegramUserId = document.getElementById('studentTelegramId').value.trim();
+            const groupId = document.getElementById('studentGroupId').value.trim();
+
+            if (!firstName || !telegramUserId || !groupId) {
+                document.getElementById('addStudentStatus').textContent = '⚠️ Please fill in all required fields.';
+                return;
+            }
+
+            document.getElementById('addStudentStatus').textContent = 'Adding student...';
+
+            try {
+                const response = await fetch('/api/teacher/students', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        first_name: firstName,
+                        last_name: lastName,
+                        telegram_user_id: parseInt(telegramUserId),
+                        group_id: parseInt(groupId)
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    document.getElementById('addStudentStatus').textContent = '✅ Student added successfully!';
+                    setTimeout(() => showAddStudent(), 2000);
+                } else {
+                    document.getElementById('addStudentStatus').textContent = '❌ ' + (data.message || 'Failed to add student.');
+                }
+            } catch (error) {
+                document.getElementById('addStudentStatus').textContent = '❌ Error adding student.';
+            }
+        }
+
+        // ---------- Error ----------
+        function showError(message) {
+            appRoot.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
+                    <h1 style="color: #fca5a5;">Error</h1>
+                    <p style="color: #9ca3af;">${message}</p>
+                    <button class="secondary-button" style="margin-top: 20px; padding: 12px 24px;" onclick="startApp()">🔄 Try Again</button>
+                </div>
+            `;
+        }
+
+        // ---------- Student Exam (placeholder) ----------
         function renderStudentExam() {
             appRoot.innerHTML = `
                 <div style="text-align: center; padding: 40px 20px;">
@@ -89,15 +265,11 @@
             `;
         }
 
-        function renderError(message) {
-            appRoot.innerHTML = `
-                <div style="text-align: center; padding: 40px 20px;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
-                    <h1 style="color: #fca5a5;">Error</h1>
-                    <p style="color: #9ca3af;">${message}</p>
-                </div>
-            `;
-        }
+        // ============================================================
+        // GLOBAL USER DATA
+        // ============================================================
+
+        let USER_DATA = null;
 
         // ============================================================
         // MAIN APPLICATION
@@ -105,42 +277,32 @@
 
         async function startApp() {
             try {
-                // Step 1: Authenticate and get user info
                 const userData = await fetchAPI('/api/me');
-
                 if (userData.status !== 'success') {
-                    renderError(userData.message || 'Authentication failed.');
+                    showError(userData.message || 'Authentication failed.');
                     return;
                 }
-
-                // Step 2: Check if user is teacher or student
+                USER_DATA = userData;
                 if (userData.is_teacher) {
-                    renderTeacherDashboard(userData);
+                    renderDashboard(userData);
                 } else {
                     renderStudentExam();
-
-                    // For students, check if exam_id is provided
                     const startParam = telegram?.initDataUnsafe?.start_param || null;
                     let examId = null;
                     if (startParam && startParam.startsWith('exam_')) {
                         examId = startParam.substring(5);
                     }
-
                     if (!examId) {
-                        renderError('Exam ID was not received from Telegram.');
+                        showError('Exam ID was not received from Telegram.');
                         return;
                     }
-
-                    // Load the exam (this will redirect to the existing exam logic)
-                    // For now, we just show a loading message
                     setTimeout(() => {
                         renderStudentExam();
                     }, 500);
                 }
-
             } catch (error) {
                 console.error('App error:', error);
-                renderError('Unable to start the application.');
+                showError('Unable to start the application.');
             }
         }
 
