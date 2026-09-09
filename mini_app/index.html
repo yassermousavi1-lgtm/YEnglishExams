@@ -202,7 +202,7 @@
             }
         }
 
-        // ---------- Exams List ----------
+        // ---------- Exams List (با حذف و دسته‌بندی) ----------
         async function loadExams() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
             try {
@@ -211,24 +211,47 @@
                     showError(data.message || 'Failed to load exams.');
                     return;
                 }
+
+                // گروه‌بندی بر اساس دسته (category)
+                const grouped = {};
+                data.exams.forEach(e => {
+                    const cat = e.category || 'Uncategorized';
+                    if (!grouped[cat]) grouped[cat] = [];
+                    grouped[cat].push(e);
+                });
+
                 let html = `
                     <div style="padding: 16px;">
                         <h2 style="color: #f9fafb;">📝 Exams (${data.total})</h2>
                         <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
                         <div style="margin-top: 12px;">
                 `;
+
                 if (data.exams.length === 0) {
                     html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
                 } else {
-                    data.exams.forEach(e => {
+                    Object.keys(grouped).forEach(cat => {
                         html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
-                                <strong style="color: #f9fafb;">${e.title}</strong>
-                                <span style="color: #9ca3af; font-size: 14px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                            </div>
+                            <div style="margin-bottom: 16px;">
+                                <h3 style="color: #60a5fa; margin-bottom: 8px;">📂 ${cat}</h3>
                         `;
+                        grouped[cat].forEach(e => {
+                            html += `
+                                <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: #f9fafb;">${e.title}</strong>
+                                        <span style="color: #9ca3af; font-size: 14px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                    </div>
+                                    <div>
+                                        <button class="secondary-button" style="padding: 4px 12px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;" onclick="deleteExam(${e.id})">❌</button>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        html += `</div>`;
                     });
                 }
+
                 html += `</div></div>`;
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
@@ -236,7 +259,32 @@
             }
         }
 
-        // ---------- Results List ----------
+        // ---------- Delete Exam ----------
+        async function deleteExam(examId) {
+            if (!confirm(`Are you sure you want to delete exam ID ${examId}? This action cannot be undone.`)) return;
+
+            try {
+                const response = await fetch('/api/teacher/exams', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ exam_id: examId })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Exam deleted successfully.');
+                    loadExams();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to delete exam.'));
+                }
+            } catch (error) {
+                alert('❌ Error deleting exam.');
+            }
+        }
+
+        // ---------- Results List (با تاریخ، ساعت و دکمه Share) ----------
         async function loadResults() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
             try {
@@ -255,11 +303,21 @@
                     html += `<p style="color: #9ca3af;">No results yet.</p>`;
                 } else {
                     data.results.forEach(r => {
+                        const date = r.completed_at ? new Date(r.completed_at).toLocaleString() : 'N/A';
                         html += `
                             <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
-                                <strong style="color: #f9fafb;">${r.student_name}</strong>
-                                <span style="color: #60a5fa; display: block;">${r.exam_title}</span>
-                                <span style="color: #34d399; font-weight: 600;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: #f9fafb;">${r.student_name}</strong>
+                                        <span style="color: #60a5fa; display: block;">${r.exam_title}</span>
+                                        <span style="color: #34d399; font-weight: 600;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
+                                        <span style="color: #9ca3af; font-size: 12px; display: block;">📅 ${date}</span>
+                                    </div>
+                                    <div>
+                                        <button class="secondary-button" style="padding: 4px 12px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 6px;" onclick="shareResult(${r.id}, '${r.student_name}', ${r.score}, ${r.total_questions}, '${r.exam_title}', '${date}')">📤</button>
+                                        <button class="secondary-button" style="padding: 4px 12px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;" onclick="deleteResult(${r.id})">❌</button>
+                                    </div>
+                                </div>
                             </div>
                         `;
                     });
@@ -268,6 +326,38 @@
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading results.');
+            }
+        }
+
+        // ---------- Share Result ----------
+        function shareResult(id, studentName, score, total, examTitle, date) {
+            const message = `📊 *Exam Result*\n\n👤 Student: ${studentName}\n📝 Exam: ${examTitle}\n📅 Date: ${date}\n✅ Score: ${score}/${total} (${Math.round((score/total)*100)}%)\n\n#YEnglishExams`;
+            const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(message)}`;
+            window.open(shareUrl, '_blank');
+        }
+
+        // ---------- Delete Result ----------
+        async function deleteResult(resultId) {
+            if (!confirm(`Are you sure you want to delete this result?`)) return;
+
+            try {
+                const response = await fetch('/api/teacher/results', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ result_id: resultId })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Result deleted successfully.');
+                    loadResults();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to delete result.'));
+                }
+            } catch (error) {
+                alert('❌ Error deleting result.');
             }
         }
 
@@ -329,7 +419,7 @@
             }
         }
 
-        // ---------- Create Exam (with JSON) ----------
+        // ---------- Create Exam (with JSON & Category) ----------
         function showCreateExam() {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
@@ -337,6 +427,7 @@
                     <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
                     <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
                         <input id="examTitle" type="text" placeholder="Exam Title" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="examCategory" type="text" placeholder="Category (e.g. Book Name, Topic)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
                         <input id="examTimeLimit" type="number" placeholder="Total Time (minutes)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
                         <input id="examQuestionCount" type="number" placeholder="Number of Questions" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
                         <textarea id="examQuestionsJson" rows="12" placeholder='[
@@ -347,14 +438,6 @@
     "option_c": "Paris",
     "option_d": "Rome",
     "correct_answer": "C"
-  },
-  {
-    "question_text": "What is 2 + 2?",
-    "option_a": "3",
-    "option_b": "4",
-    "option_c": "5",
-    "option_d": "6",
-    "correct_answer": "B"
   }
 ]' style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb; font-family: monospace; resize: vertical; direction: ltr;"></textarea>
                         <button class="primary-button" style="padding: 14px;" onclick="createExamWithJson()">Create Exam</button>
@@ -367,6 +450,7 @@
         // ---------- Create Exam with JSON API ----------
         async function createExamWithJson() {
             const title = document.getElementById('examTitle').value.trim();
+            const category = document.getElementById('examCategory').value.trim();
             const timeLimit = document.getElementById('examTimeLimit').value.trim();
             const questionCount = document.getElementById('examQuestionCount').value.trim();
             const questionsJson = document.getElementById('examQuestionsJson').value.trim();
@@ -405,6 +489,7 @@
                     },
                     body: JSON.stringify({
                         title: title,
+                        category: category || 'Uncategorized',
                         time_limit: parseInt(timeLimit),
                         questions: questions
                     })
@@ -421,7 +506,7 @@
             }
         }
 
-        // ---------- Send Exam (with Assign & Send) ----------
+        // ---------- Send Exam (با نمایش گروه و Unassign) ----------
         async function showSendExam() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
             try {
@@ -435,7 +520,10 @@
                     return;
                 }
 
-                const assignedExamIds = assignmentsData.assignments.map(a => a.exam_id);
+                const assignedMap = {};
+                assignmentsData.assignments.forEach(a => {
+                    assignedMap[a.exam_id] = a;
+                });
 
                 let html = `
                     <div style="padding: 16px;">
@@ -448,18 +536,23 @@
                     html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
                 } else {
                     examsData.exams.forEach(e => {
-                        const isAssigned = assignedExamIds.includes(e.id);
+                        const assigned = assignedMap[e.id];
+                        const isAssigned = !!assigned;
                         html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <strong style="color: #f9fafb;">${e.title}</strong>
-                                    <span style="color: #9ca3af; font-size: 14px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                </div>
-                                <div>
-                                    ${isAssigned ? 
-                                        `<button class="primary-button" style="padding: 8px 16px;" onclick="sendExamByExamId(${e.id})">📤 Send</button>` :
-                                        `<button class="primary-button" style="padding: 8px 16px; background: #2563eb;" onclick="assignAndSendExam(${e.id})">📌 Assign & Send</button>`
-                                    }
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: #f9fafb;">${e.title}</strong>
+                                        <span style="color: #9ca3af; font-size: 14px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 14px;">📌 Assigned to: ${assigned.group_name} (${assigned.telegram_group_id})</span>` : `<span style="color: #fbbf24; font-size: 14px;">⚠️ Not assigned to any group</span>`}
+                                    </div>
+                                    <div>
+                                        ${isAssigned ? 
+                                            `<button class="primary-button" style="padding: 4px 12px; margin-right: 4px;" onclick="sendExamByExamId(${e.id})">📤 Send</button>
+                                             <button class="secondary-button" style="padding: 4px 12px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;" onclick="unassignExam(${e.id})">🔓 Unassign</button>` :
+                                            `<button class="primary-button" style="padding: 4px 12px; background: #2563eb;" onclick="assignAndSendExam(${e.id})">📌 Assign & Send</button>`
+                                        }
+                                    </div>
                                 </div>
                             </div>
                         `;
@@ -470,6 +563,31 @@
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading data.');
+            }
+        }
+
+        // ---------- Unassign Exam ----------
+        async function unassignExam(examId) {
+            if (!confirm(`Are you sure you want to unassign exam ID ${examId}? Students will no longer be able to access it.`)) return;
+
+            try {
+                const response = await fetch('/api/teacher/unassign_exam', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ exam_id: examId })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Exam unassigned successfully.');
+                    showSendExam();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to unassign exam.'));
+                }
+            } catch (error) {
+                alert('❌ Error unassigning exam.');
             }
         }
 
@@ -570,13 +688,11 @@
             `;
         }
 
-        // ---------- Load Exam (واقعی) ----------
+        // ---------- Load Exam ----------
         async function loadExam(examId) {
             try {
-                // نمایش صفحه Loading
                 statusElement.textContent = 'Loading exam...';
 
-                // دریافت اطلاعات آزمون از سرور
                 const response = await fetch(`/api/exam/${examId}/questions`, {
                     method: 'GET',
                     headers: {
@@ -606,7 +722,6 @@
                     return;
                 }
 
-                // ذخیره اطلاعات آزمون
                 exam = data.exam;
                 questions = data.questions || [];
 
@@ -615,7 +730,6 @@
                     return;
                 }
 
-                // شروع آزمون
                 startedAt = new Date().toISOString();
                 examTitleElement.textContent = exam.title;
                 remainingSeconds = Number(exam.time_limit) * 60;
@@ -637,25 +751,21 @@
             const questionNumber = currentQuestionIndex + 1;
             const totalQuestions = questions.length;
 
-            // به‌روزرسانی هدر
             questionProgressElement.textContent = `Question ${questionNumber} of ${totalQuestions}`;
             progressFillElement.style.width = `${(questionNumber / totalQuestions) * 100}%`;
 
             questionContainer.innerHTML = '';
 
-            // شماره سوال
             const numberEl = document.createElement('div');
             numberEl.className = 'question-number';
             numberEl.textContent = `Question ${questionNumber}`;
             questionContainer.appendChild(numberEl);
 
-            // متن سوال
             const textEl = document.createElement('h2');
             textEl.className = 'question-text';
             textEl.textContent = question.question_text;
             questionContainer.appendChild(textEl);
 
-            // گزینه‌ها
             const optionsContainer = document.createElement('div');
             optionsContainer.className = 'options-container';
 
@@ -852,7 +962,6 @@
                 return;
             }
 
-            // آخرین سوال → ارسال
             await submitExam();
         });
 
@@ -872,7 +981,6 @@
                 if (userData.is_teacher) {
                     renderDashboard(userData);
                 } else {
-                    // دانشجو: دریافت examId از start_param
                     const startParam = telegram?.initDataUnsafe?.start_param || null;
                     examId = null;
                     if (startParam && startParam.startsWith('exam_')) {
@@ -884,7 +992,6 @@
                         return;
                     }
 
-                    // بارگذاری آزمون
                     await loadExam(examId);
                 }
             } catch (error) {
