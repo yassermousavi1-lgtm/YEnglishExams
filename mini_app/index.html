@@ -127,14 +127,14 @@
                 if (data.exams.length === 0) {
                     html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
                 } else {
-                    data.exams.forEach(e => {
-                        html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
-                                <strong style="color: #f9fafb;">${e.title}</strong>
-                                <span style="color: #9ca3af; font-size: 14px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                            </div>
-                        `;
-                    });
+		data.exams.forEach(e => {
+   		 html += `
+    		    <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+      		      <strong style="color: #f9fafb;">${e.title}</strong>
+      		      <span style="color: #9ca3af; font-size: 14px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+   		     </div>
+  		  `;
+		});
                 }
                 html += `</div></div>`;
                 appRoot.innerHTML = html;
