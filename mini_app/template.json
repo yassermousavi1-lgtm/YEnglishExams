@@ -1,0 +1,10 @@
+[
+  {
+    "question_text": "Write your question here",
+    "option_a": "Option A text",
+    "option_b": "Option B text",
+    "option_c": "Option C text",
+    "option_d": "Option D text",
+    "correct_answer": "A"
+  }
+]

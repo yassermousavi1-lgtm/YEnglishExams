@@ -372,8 +372,6 @@
         }
 
         // ---------- Share Result ----------
-     
-              // ---------- Share Result (با سوالات اشتباه) ----------
         async function shareResult(resultId) {
             try {
                 const data = await fetchAPI(`/api/teacher/result_details/${resultId}`);
@@ -413,8 +411,6 @@
                 alert('Error loading result details.');
             }
         }
-
-
 
         // ---------- Delete Result ----------
         async function deleteResult(resultId) {
@@ -551,12 +547,15 @@
             }
         }
 
-        // ---------- Create Exam ----------
+        // ---------- Create Exam (با دکمه Download JSON) ----------
         function showCreateExam() {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <h2 style="color: #f9fafb;">📝 Create Exam</h2>
-                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h2 style="color: #f9fafb; margin: 0;">📝 Create Exam</h2>
+                        <a href="/template.json" download="template.json" style="color: #60a5fa; text-decoration: none; font-size: 14px; background: #1f2937; padding: 8px 16px; border-radius: 8px; border: 1px solid #374151;">⬇️ Download JSON Template</a>
+                    </div>
+                    <button class="secondary-button" style="margin: 0 0 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
                     <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
                         <input id="examTitle" type="text" placeholder="Exam Title" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
                         <input id="examCategory" type="text" placeholder="Category (e.g. Book Name, Topic)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
@@ -638,7 +637,7 @@
             }
         }
 
-        // ---------- Send Exam (با انتخاب گروه) ----------
+        // ---------- Send Exam ----------
         async function showSendExam() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
             try {
@@ -701,7 +700,7 @@
             }
         }
 
-        // ---------- Show Assign Form (انتخاب گروه) ----------
+        // ---------- Show Assign Form (انتخاب چند گروه) ----------
         function showAssignForm(examId) {
             let optionsHtml = '';
             allGroups.forEach(g => {
@@ -710,31 +709,32 @@
 
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <h2 style="color: #f9fafb;">📌 Assign Exam to Group</h2>
+                    <h2 style="color: #f9fafb;">📌 Assign Exam to Groups</h2>
                     <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="showSendExam()">← Back</button>
                     <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
-                        <label style="color: #9ca3af;">Select Group:</label>
-                        <select id="assignGroupSelect" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <label style="color: #9ca3af;">Select Groups (hold Ctrl to select multiple):</label>
+                        <select id="assignGroupSelect" multiple style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb; min-height: 100px;">
                             ${optionsHtml}
                         </select>
-                        <button class="primary-button" style="padding: 14px;" onclick="assignAndSendExamWithGroup(${examId})">Assign & Send</button>
+                        <button class="primary-button" style="padding: 14px;" onclick="assignAndSendExamWithGroups(${examId})">Assign & Send</button>
                     </div>
                     <div id="assignStatus" style="margin-top: 12px; color: #9ca3af;"></div>
                 </div>
             `;
         }
 
-        // ---------- Assign and Send Exam with Selected Group ----------
-        async function assignAndSendExamWithGroup(examId) {
+        // ---------- Assign and Send Exam with Multiple Groups ----------
+        async function assignAndSendExamWithGroups(examId) {
             const groupSelect = document.getElementById('assignGroupSelect');
-            const groupId = parseInt(groupSelect.value);
+            const selectedOptions = groupSelect.selectedOptions;
+            const groupIds = Array.from(selectedOptions).map(opt => parseInt(opt.value));
 
-            if (!groupId) {
-                document.getElementById('assignStatus').textContent = '⚠️ Please select a group.';
+            if (groupIds.length === 0) {
+                document.getElementById('assignStatus').textContent = '⚠️ Please select at least one group.';
                 return;
             }
 
-            document.getElementById('assignStatus').textContent = 'Assigning exam to group...';
+            document.getElementById('assignStatus').textContent = 'Assigning exam to groups...';
 
             try {
                 const assignResponse = await fetch('/api/teacher/assign_exam', {
@@ -745,7 +745,7 @@
                     },
                     body: JSON.stringify({
                         exam_id: examId,
-                        group_id: groupId
+                        group_ids: groupIds
                     })
                 });
                 const assignData = await assignResponse.json();
@@ -765,13 +765,13 @@
                     },
                     body: JSON.stringify({
                         exam_id: examId,
-                        group_id: groupId
+                        group_ids: groupIds
                     })
                 });
                 const sendData = await sendResponse.json();
 
                 if (sendData.status === 'success') {
-                    document.getElementById('assignStatus').textContent = '✅ Exam sent successfully!';
+                    document.getElementById('assignStatus').textContent = '✅ ' + (sendData.message || 'Exam sent successfully!');
                     setTimeout(() => showSendExam(), 2000);
                 } else {
                     document.getElementById('assignStatus').textContent = '❌ ' + (sendData.message || 'Failed to send exam.');
@@ -822,7 +822,7 @@
                     },
                     body: JSON.stringify({
                         exam_id: examId,
-                        group_id: 1
+                        group_ids: [1]
                     })
                 });
                 const data = await response.json();

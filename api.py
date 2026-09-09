@@ -102,6 +102,12 @@ def check_exam_access(student_id, group_id, exam_id, connection):
     return cursor.fetchone() is not None
 
 
+def has_student_taken_exam(student_id, exam_id, connection):
+    cursor = connection.cursor()
+    cursor.execute("SELECT id FROM results WHERE student_id = ? AND exam_id = ? LIMIT 1", (student_id, exam_id))
+    return cursor.fetchone() is not None
+
+
 def send_result_to_teacher(student, exam, score, total_questions, completed_at):
     if not TELEGRAM_BOT_TOKEN or not TEACHER_TELEGRAM_ID:
         print("Teacher notification skipped.")
@@ -192,6 +198,8 @@ def get_exam(exam_id):
         student = find_student_by_telegram_id(telegram_user["id"], connection)
         if student is None:
             return jsonify({"status": "error", "message": "Student account is not registered."}), 403
+        if has_student_taken_exam(student["id"], exam_id, connection):
+            return jsonify({"status": "error", "message": "You have already taken this exam."}), 403
         if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
             return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
         cursor = connection.cursor()
@@ -215,6 +223,8 @@ def get_exam_questions(exam_id):
         student = find_student_by_telegram_id(telegram_user["id"], connection)
         if student is None:
             return jsonify({"status": "error", "message": "Student account is not registered."}), 403
+        if has_student_taken_exam(student["id"], exam_id, connection):
+            return jsonify({"status": "error", "message": "You have already taken this exam."}), 403
         if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
             return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
         cursor = connection.cursor()
@@ -272,6 +282,10 @@ def submit_exam():
         if student is None:
             return jsonify({"status": "error", "message": "Student account is not registered."}), 403
         print(f"Student found: {student['id']}")
+        
+        print("Checking if student already took exam...")
+        if has_student_taken_exam(student["id"], exam_id, connection):
+            return jsonify({"status": "error", "message": "You have already taken this exam."}), 403
         
         print("Checking exam access...")
         if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
@@ -738,17 +752,25 @@ def teacher_assign_exam():
     if not data:
         return jsonify({"status": "error", "message": "Invalid request."}), 400
     exam_id = data.get("exam_id")
-    group_id = data.get("group_id")
-    if not exam_id or not group_id:
-        return jsonify({"status": "error", "message": "exam_id and group_id required."}), 400
+    group_ids = data.get("group_ids")
+    if not exam_id or not group_ids:
+        return jsonify({"status": "error", "message": "exam_id and group_ids are required."}), 400
+    if not isinstance(group_ids, list):
+        return jsonify({"status": "error", "message": "group_ids must be a list."}), 400
+    
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        cursor.execute("INSERT INTO exam_assignments (exam_id, group_id) VALUES (?, ?)", (exam_id, group_id))
+        assigned_count = 0
+        for group_id in group_ids:
+            try:
+                cursor.execute("INSERT INTO exam_assignments (exam_id, group_id) VALUES (?, ?)", (exam_id, group_id))
+                assigned_count += 1
+            except sqlite3.IntegrityError:
+                # اگر قبلاً assigned شده، نادیده بگیر
+                pass
         connection.commit()
-        return jsonify({"status": "success", "message": "Exam assigned successfully."})
-    except sqlite3.IntegrityError:
-        return jsonify({"status": "error", "message": "Exam already assigned to this group."})
+        return jsonify({"status": "success", "message": f"Exam assigned to {assigned_count} group(s)."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -775,7 +797,7 @@ def teacher_unassign_exam():
     try:
         cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
         connection.commit()
-        return jsonify({"status": "success", "message": "Exam unassigned successfully."})
+        return jsonify({"status": "success", "message": "Exam unassigned from all groups."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -795,54 +817,46 @@ def teacher_send_exam_by_exam_id():
     if not data:
         return jsonify({"status": "error", "message": "Invalid request."}), 400
     exam_id = data.get("exam_id")
-    group_id = data.get("group_id")
-    if not exam_id or not group_id:
-        return jsonify({"status": "error", "message": "exam_id and group_id required."}), 400
+    group_ids = data.get("group_ids")
+    if not exam_id or not group_ids:
+        return jsonify({"status": "error", "message": "exam_id and group_ids are required."}), 400
+    if not isinstance(group_ids, list):
+        return jsonify({"status": "error", "message": "group_ids must be a list."}), 400
+    
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        assignment = cursor.execute("SELECT id FROM exam_assignments WHERE exam_id = ? AND group_id = ?", (exam_id, group_id)).fetchone()
-        if not assignment:
-            return jsonify({"status": "error", "message": "Exam is not assigned to this group."}), 400
         exam = cursor.execute("SELECT id, title, time_limit FROM exams WHERE id = ?", (exam_id,)).fetchone()
-        group = cursor.execute("SELECT telegram_group_id, name FROM groups WHERE id = ?", (group_id,)).fetchone()
-        if not exam or not group:
-            return jsonify({"status": "error", "message": "Exam or group not found."}), 404
+        if not exam:
+            return jsonify({"status": "error", "message": "Exam not found."}), 404
+        
         question_count = cursor.execute("SELECT COUNT(*) FROM exam_questions WHERE exam_id = ?", (exam_id,)).fetchone()[0]
         bot_username = "YEnglsihExamsbot"
         deep_link = f"https://t.me/{bot_username}?startapp=exam_{exam_id}"
         import asyncio
         from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
-        from telegram.error import RetryAfter, NetworkError, TimedOut
         
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         message = (f"📝 EXAM\n\nTitle: {exam['title']}\nQuestions: {question_count}\nTime Limit: {exam['time_limit']} minutes\n\nWhen you are ready, press the button below to start the exam.")
         keyboard = [[InlineKeyboardButton("📝 Start Exam", url=deep_link)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        max_retries = 3
-        for attempt in range(max_retries):
+        sent_count = 0
+        for group_id in group_ids:
             try:
+                group = cursor.execute("SELECT telegram_group_id, name FROM groups WHERE id = ?", (group_id,)).fetchone()
+                if not group:
+                    continue
                 asyncio.run(bot.send_message(
                     chat_id=group["telegram_group_id"],
                     text=message,
-                    reply_markup=reply_markup,
-                    timeout=30
+                    reply_markup=reply_markup
                 ))
-                return jsonify({"status": "success", "message": "Exam sent successfully."})
-            except (RetryAfter, NetworkError, TimedOut) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
-                    print(f"Send attempt {attempt+1} failed. Retrying in {wait_time}s... Error: {e}")
-                    import time
-                    time.sleep(wait_time)
-                else:
-                    print(f"All {max_retries} attempts failed. Error: {e}")
-                    return jsonify({"status": "error", "message": f"Failed to send after {max_retries} attempts. Please try again later."}), 500
+                sent_count += 1
             except Exception as e:
-                print(f"Unexpected error: {e}")
-                return jsonify({"status": "error", "message": str(e)}), 500
-                
+                print(f"Error sending to group {group_id}: {e}")
+        
+        return jsonify({"status": "success", "message": f"Exam sent to {sent_count} group(s)."})
     except Exception as error:
         print("SEND EXAM ERROR:", error)
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -884,12 +898,20 @@ def teacher_result_details(result_id):
         """, (result_id,))
         wrong_answers = cursor.fetchall()
         
+        # دریافت پاسخ‌ها با متن کامل
         wrong_list = []
         for w in wrong_answers:
+            options = {
+                "A": w["option_a"],
+                "B": w["option_b"],
+                "C": w["option_c"],
+                "D": w["option_d"]
+            }
+            selected_text = options.get(w["selected_answer"], w["selected_answer"]) if w["selected_answer"] else "No answer"
             wrong_list.append({
                 "question_text": w["question_text"],
-                "selected_answer": w["selected_answer"],
-                "correct_answer": w["correct_answer"]
+                "selected_answer": f"{w['selected_answer']}) {selected_text}" if w['selected_answer'] else "No answer",
+                "correct_answer": f"{w['correct_answer']}) {options.get(w['correct_answer'], w['correct_answer'])}"
             })
         
         return jsonify({
