@@ -762,8 +762,7 @@ def teacher_send_exam_by_exam_id():
         return jsonify({"status": "error", "message": str(error)}), 500
     finally:
         connection.close()
-
-       @app.route("/api/teacher/result_details/<int:result_id>")
+@app.route("/api/teacher/result_details/<int:result_id>")
 def teacher_result_details(result_id):
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
