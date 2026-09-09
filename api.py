@@ -244,7 +244,10 @@ def get_exam_questions(exam_id):
 
 
 @app.route("/api/exam/submit", methods=["POST"])
+
+
 def submit_exam():
+    print("=== SUBMIT EXAM STARTED ===")
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
         return jsonify({"status": "error", "message": auth_result["message"]}), 401
@@ -259,18 +262,32 @@ def submit_exam():
         return jsonify({"status": "error", "message": "exam_id is required."}), 400
     if not isinstance(answers, dict):
         return jsonify({"status": "error", "message": "answers must be an object."}), 400
+    
+    print(f"Exam ID: {exam_id}")
+    print(f"Answers: {answers}")
+    
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
+        print("Finding student...")
         student = find_student_by_telegram_id(telegram_user["id"], connection)
         if student is None:
             return jsonify({"status": "error", "message": "Student account is not registered."}), 403
+        print(f"Student found: {student['id']}")
+        
+        print("Checking exam access...")
         if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
             return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
+        print("Access granted")
+        
+        print("Getting exam info...")
         cursor.execute("SELECT id, title FROM exams WHERE id = ?", (exam_id,))
         exam = cursor.fetchone()
         if exam is None:
             return jsonify({"status": "error", "message": "Exam not found."}), 404
+        print(f"Exam found: {exam['title']}")
+        
+        print("Getting questions...")
         cursor.execute("""
             SELECT q.id, q.correct_answer, eq.question_order
             FROM exam_questions AS eq
@@ -282,6 +299,9 @@ def submit_exam():
         total_questions = len(questions)
         if total_questions == 0:
             return jsonify({"status": "error", "message": "This exam has no questions."}), 400
+        print(f"Total questions: {total_questions}")
+        
+        print("Calculating score...")
         score = 0
         for question in questions:
             question_id = str(question["id"])
@@ -292,36 +312,45 @@ def submit_exam():
             submitted_answer = str(submitted_answer).strip().upper()
             if submitted_answer == correct_answer:
                 score += 1
-        # ذخیره پاسخ‌های هر سوال در جدول student_answers
-        # این کار باید بعد از ذخیره result انجام شود
-        # برای همین فعلاً یک placeholder می‌گذاریم
+        print(f"Score: {score}")
+        
         completed_at = datetime.now().isoformat(timespec="seconds")
         if not started_at:
             started_at = completed_at
+        
+        print("Saving result...")
         cursor.execute("""
             INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (student["id"], exam_id, score, total_questions, started_at, completed_at))
         result_id = cursor.lastrowid
-                    # ذخیره پاسخ‌های دانشجو برای هر سوال
+        print(f"Result ID: {result_id}")
+        
+        print("Saving student answers...")
         for question in questions:
             question_id = str(question["id"])
             correct_answer = str(question["correct_answer"]).strip().upper()
             submitted_answer = answers.get(question_id)
-            
             if submitted_answer is None:
                 submitted_answer = None
                 is_correct = False
             else:
                 submitted_answer = str(submitted_answer).strip().upper()
                 is_correct = (submitted_answer == correct_answer)
-            
             cursor.execute("""
                 INSERT INTO student_answers (result_id, question_id, selected_answer, is_correct)
                 VALUES (?, ?, ?, ?)
             """, (result_id, question_id, submitted_answer, is_correct))
+        print("Student answers saved")
+        
         connection.commit()
+        print("Committed to database")
+        
+        print("Sending notification to teacher...")
         send_result_to_teacher(student, exam, score, total_questions, completed_at)
+        print("Notification sent")
+        
+        print("=== SUBMIT EXAM COMPLETED SUCCESSFULLY ===")
         return jsonify({
             "status": "success",
             "message": "Exam submitted successfully.",
@@ -337,10 +366,17 @@ def submit_exam():
         })
     except Exception as error:
         connection.rollback()
-        print("SUBMIT EXAM ERROR:", error)
+        print("=== SUBMIT EXAM ERROR ===")
+        print("ERROR TYPE:", type(error).__name__)
+        print("ERROR MESSAGE:", str(error))
+        print("ERROR DETAILS:", error.__dict__ if hasattr(error, '__dict__') else 'No details')
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": "An internal server error occurred."}), 500
     finally:
         connection.close()
+
+
 
 
 # ============================================================
