@@ -372,6 +372,8 @@
         }
 
         // ---------- Share Result ----------
+     
+              // ---------- Share Result (با سوالات اشتباه) ----------
         async function shareResult(resultId) {
             try {
                 const data = await fetchAPI(`/api/teacher/result_details/${resultId}`);
@@ -389,13 +391,13 @@
                 message += `📅 Date: ${new Date(r.completed_at).toLocaleString()}\n`;
                 message += `✅ Score: ${r.score}/${r.total_questions} (${percentage}%)\n\n`;
 
-                const wrongQuestions = [];
+                const wrongQuestions = r.wrong_answers || [];
 
                 if (wrongQuestions.length > 0) {
                     message += `❌ *Wrong Answers:*\n`;
                     wrongQuestions.forEach((q, i) => {
                         message += `${i+1}. ${q.question_text}\n`;
-                        message += `   Your answer: ${q.your_answer}\n`;
+                        message += `   Your answer: ${q.selected_answer || 'No answer'}\n`;
                         message += `   Correct answer: ${q.correct_answer}\n\n`;
                     });
                 } else {
@@ -411,6 +413,8 @@
                 alert('Error loading result details.');
             }
         }
+
+
 
         // ---------- Delete Result ----------
         async function deleteResult(resultId) {

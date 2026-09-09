@@ -292,6 +292,9 @@ def submit_exam():
             submitted_answer = str(submitted_answer).strip().upper()
             if submitted_answer == correct_answer:
                 score += 1
+        # ذخیره پاسخ‌های هر سوال در جدول student_answers
+        # این کار باید بعد از ذخیره result انجام شود
+        # برای همین فعلاً یک placeholder می‌گذاریم
         completed_at = datetime.now().isoformat(timespec="seconds")
         if not started_at:
             started_at = completed_at
@@ -300,6 +303,23 @@ def submit_exam():
             VALUES (?, ?, ?, ?, ?, ?)
         """, (student["id"], exam_id, score, total_questions, started_at, completed_at))
         result_id = cursor.lastrowid
+                    # ذخیره پاسخ‌های دانشجو برای هر سوال
+        for question in questions:
+            question_id = str(question["id"])
+            correct_answer = str(question["correct_answer"]).strip().upper()
+            submitted_answer = answers.get(question_id)
+            
+            if submitted_answer is None:
+                submitted_answer = None
+                is_correct = False
+            else:
+                submitted_answer = str(submitted_answer).strip().upper()
+                is_correct = (submitted_answer == correct_answer)
+            
+            cursor.execute("""
+                INSERT INTO student_answers (result_id, question_id, selected_answer, is_correct)
+                VALUES (?, ?, ?, ?)
+            """, (result_id, question_id, submitted_answer, is_correct))
         connection.commit()
         send_result_to_teacher(student, exam, score, total_questions, completed_at)
         return jsonify({
@@ -743,8 +763,7 @@ def teacher_send_exam_by_exam_id():
     finally:
         connection.close()
 
-
-@app.route("/api/teacher/result_details/<int:result_id>")
+       @app.route("/api/teacher/result_details/<int:result_id>")
 def teacher_result_details(result_id):
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
@@ -767,24 +786,26 @@ def teacher_result_details(result_id):
         result = cursor.fetchone()
         if not result:
             return jsonify({"status": "error", "message": "Result not found."}), 404
+        
+        # دریافت سوالات اشتباه
         cursor.execute("""
             SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_answer,
-                   eq.question_order
-            FROM exam_questions eq
-            JOIN questions q ON q.id = eq.question_id
-            WHERE eq.exam_id = ?
-            ORDER BY eq.question_order
-        """, (result["exam_id"],))
-        questions = cursor.fetchall()
-        question_list = []
-        for q in questions:
-            question_list.append({
-                "id": q["id"],
-                "question_text": q["question_text"],
-                "options": {"A": q["option_a"], "B": q["option_b"], "C": q["option_c"], "D": q["option_d"]},
-                "correct_answer": q["correct_answer"],
-                "question_order": q["question_order"]
+                   sa.selected_answer, sa.is_correct
+            FROM student_answers sa
+            JOIN questions q ON q.id = sa.question_id
+            WHERE sa.result_id = ? AND sa.is_correct = 0
+            ORDER BY q.id
+        """, (result_id,))
+        wrong_answers = cursor.fetchall()
+        
+        wrong_list = []
+        for w in wrong_answers:
+            wrong_list.append({
+                "question_text": w["question_text"],
+                "selected_answer": w["selected_answer"],
+                "correct_answer": w["correct_answer"]
             })
+        
         return jsonify({
             "status": "success",
             "result": {
@@ -794,11 +815,14 @@ def teacher_result_details(result_id):
                 "score": result["score"],
                 "total_questions": result["total_questions"],
                 "completed_at": result["completed_at"],
-                "questions": question_list
+                "wrong_answers": wrong_list
             }
         })
     finally:
         connection.close()
+
+
+
 
 
 if __name__ == "__main__":

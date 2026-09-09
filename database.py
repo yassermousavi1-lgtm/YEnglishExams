@@ -246,6 +246,21 @@ def create_database():
     #
     # More detailed answer-by-answer tracking can be added
     # later if the project requires it.
+         # ========================================================
+    # STUDENT ANSWERS
+    # ========================================================
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS student_answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            result_id INTEGER NOT NULL,
+            question_id INTEGER NOT NULL,
+            selected_answer TEXT,
+            is_correct BOOLEAN NOT NULL,
+            FOREIGN KEY (result_id) REFERENCES results(id) ON DELETE CASCADE,
+            FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+        )
+    """)
     # ========================================================
 
     cursor.execute("""
