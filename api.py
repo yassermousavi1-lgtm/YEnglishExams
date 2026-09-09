@@ -244,8 +244,6 @@ def get_exam_questions(exam_id):
 
 
 @app.route("/api/exam/submit", methods=["POST"])
-
-
 def submit_exam():
     print("=== SUBMIT EXAM STARTED ===")
     auth_result = get_authenticated_user()
@@ -377,8 +375,6 @@ def submit_exam():
         connection.close()
 
 
-
-
 # ============================================================
 # TEACHER ENDPOINTS
 # ============================================================
@@ -454,6 +450,36 @@ def teacher_get_groups():
         cursor.execute("SELECT id, telegram_group_id, name, created_at FROM groups ORDER BY name")
         groups = cursor.fetchall()
         return jsonify({"status": "success", "groups": [{"id": g["id"], "telegram_group_id": g["telegram_group_id"], "name": g["name"], "created_at": g["created_at"]} for g in groups], "total": len(groups)})
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/groups", methods=["POST"])
+def teacher_add_group():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Request body is missing."}), 400
+    name = data.get("name", "").strip()
+    telegram_group_id = data.get("telegram_group_id")
+    if not name or not telegram_group_id:
+        return jsonify({"status": "error", "message": "name and telegram_group_id are required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("INSERT INTO groups (name, telegram_group_id) VALUES (?, ?)", (name, telegram_group_id))
+        connection.commit()
+        return jsonify({"status": "success", "message": "Group added successfully.", "group_id": cursor.lastrowid})
+    except sqlite3.IntegrityError:
+        return jsonify({"status": "error", "message": "This group is already registered."}), 400
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
     finally:
         connection.close()
 
@@ -787,17 +813,43 @@ def teacher_send_exam_by_exam_id():
         deep_link = f"https://t.me/{bot_username}?startapp=exam_{exam_id}"
         import asyncio
         from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+        from telegram.error import RetryAfter, NetworkError, TimedOut
+        
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         message = (f"📝 EXAM\n\nTitle: {exam['title']}\nQuestions: {question_count}\nTime Limit: {exam['time_limit']} minutes\n\nWhen you are ready, press the button below to start the exam.")
         keyboard = [[InlineKeyboardButton("📝 Start Exam", url=deep_link)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        asyncio.run(bot.send_message(chat_id=group["telegram_group_id"], text=message, reply_markup=reply_markup))
-        return jsonify({"status": "success", "message": "Exam sent successfully."})
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                asyncio.run(bot.send_message(
+                    chat_id=group["telegram_group_id"],
+                    text=message,
+                    reply_markup=reply_markup,
+                    timeout=30
+                ))
+                return jsonify({"status": "success", "message": "Exam sent successfully."})
+            except (RetryAfter, NetworkError, TimedOut) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"Send attempt {attempt+1} failed. Retrying in {wait_time}s... Error: {e}")
+                    import time
+                    time.sleep(wait_time)
+                else:
+                    print(f"All {max_retries} attempts failed. Error: {e}")
+                    return jsonify({"status": "error", "message": f"Failed to send after {max_retries} attempts. Please try again later."}), 500
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                return jsonify({"status": "error", "message": str(e)}), 500
+                
     except Exception as error:
         print("SEND EXAM ERROR:", error)
         return jsonify({"status": "error", "message": str(error)}), 500
     finally:
         connection.close()
+
+
 @app.route("/api/teacher/result_details/<int:result_id>")
 def teacher_result_details(result_id):
     auth_result = get_authenticated_user()
@@ -822,7 +874,6 @@ def teacher_result_details(result_id):
         if not result:
             return jsonify({"status": "error", "message": "Result not found."}), 404
         
-        # دریافت سوالات اشتباه
         cursor.execute("""
             SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_answer,
                    sa.selected_answer, sa.is_correct
@@ -857,9 +908,6 @@ def teacher_result_details(result_id):
         connection.close()
 
 
-
-
-
 if __name__ == "__main__":
     print()
     print("========================================")
@@ -879,50 +927,3 @@ if __name__ == "__main__":
     print("========================================")
     print()
     app.run(host="127.0.0.1", port=5000, debug=False)
-
-
-# ============================================================
-# TEACHER: ADD GROUP
-# ============================================================
-
-@app.route("/api/teacher/groups", methods=["POST"])
-def teacher_add_group():
-    auth_result = get_authenticated_user()
-    if not auth_result["valid"]:
-        return jsonify({"status": "error", "message": auth_result["message"]}), 401
-
-    telegram_user = auth_result["user"]
-    if not is_teacher(telegram_user["id"]):
-        return jsonify({"status": "error", "message": "Access denied."}), 403
-
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"status": "error", "message": "Request body is missing."}), 400
-
-    name = data.get("name", "").strip()
-    telegram_group_id = data.get("telegram_group_id")
-
-    if not name or not telegram_group_id:
-        return jsonify({"status": "error", "message": "name and telegram_group_id are required."}), 400
-
-    connection = get_database_connection()
-    cursor = connection.cursor()
-
-    try:
-        cursor.execute(
-            "INSERT INTO groups (name, telegram_group_id) VALUES (?, ?)",
-            (name, telegram_group_id)
-        )
-        connection.commit()
-        return jsonify({
-            "status": "success",
-            "message": "Group added successfully.",
-            "group_id": cursor.lastrowid
-        })
-    except sqlite3.IntegrityError:
-        return jsonify({"status": "error", "message": "This group is already registered."}), 400
-    except Exception as error:
-        connection.rollback()
-        return jsonify({"status": "error", "message": str(error)}), 500
-    finally:
-        connection.close()
