@@ -820,3 +820,50 @@ if __name__ == "__main__":
     print("========================================")
     print()
     app.run(host="127.0.0.1", port=5000, debug=False)
+
+
+# ============================================================
+# TEACHER: ADD GROUP
+# ============================================================
+
+@app.route("/api/teacher/groups", methods=["POST"])
+def teacher_add_group():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Request body is missing."}), 400
+
+    name = data.get("name", "").strip()
+    telegram_group_id = data.get("telegram_group_id")
+
+    if not name or not telegram_group_id:
+        return jsonify({"status": "error", "message": "name and telegram_group_id are required."}), 400
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute(
+            "INSERT INTO groups (name, telegram_group_id) VALUES (?, ?)",
+            (name, telegram_group_id)
+        )
+        connection.commit()
+        return jsonify({
+            "status": "success",
+            "message": "Group added successfully.",
+            "group_id": cursor.lastrowid
+        })
+    except sqlite3.IntegrityError:
+        return jsonify({"status": "error", "message": "This group is already registered."}), 400
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()

@@ -140,6 +140,7 @@
                         <button class="primary-button" style="padding: 16px;" onclick="loadExams()">📝 Exams</button>
                         <button class="primary-button" style="padding: 16px;" onclick="loadResults()">📊 Results</button>
                         <button class="primary-button" style="padding: 16px;" onclick="showAddStudent()">➕ Add Student</button>
+                        <button class="primary-button" style="padding: 16px;" onclick="showAddGroup()">➕ Add Group</button>
                         <button class="primary-button" style="padding: 16px;" onclick="showCreateExam()">📝 Create Exam</button>
                         <button class="primary-button" style="padding: 16px;" onclick="showSendExam()">📤 Send Exam</button>
                     </div>
@@ -388,10 +389,7 @@
                 message += `📅 Date: ${new Date(r.completed_at).toLocaleString()}\n`;
                 message += `✅ Score: ${r.score}/${r.total_questions} (${percentage}%)\n\n`;
 
-                // سوالات اشتباه
                 const wrongQuestions = [];
-                // در حال حاضر فقط سوالات را نمایش می‌دهیم.
-                // برای پاسخ‌های دانشجو نیاز به ذخیره‌سازی جداگانه است.
 
                 if (wrongQuestions.length > 0) {
                     message += `❌ *Wrong Answers:*\n`;
@@ -494,6 +492,58 @@
                 }
             } catch (error) {
                 document.getElementById('addStudentStatus').textContent = '❌ Error adding student.';
+            }
+        }
+
+        // ---------- Add Group Form ----------
+        function showAddGroup() {
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 20px;">
+                    <h2 style="color: #f9fafb;">➕ Add Group</h2>
+                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
+                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
+                        <input id="groupName" type="text" placeholder="Group Name" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="groupTelegramId" type="text" placeholder="Telegram Group ID (e.g. -1234567890)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <button class="primary-button" style="padding: 14px;" onclick="addGroup()">Add Group</button>
+                    </div>
+                    <div id="addGroupStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                </div>
+            `;
+        }
+
+        // ---------- Add Group API ----------
+        async function addGroup() {
+            const name = document.getElementById('groupName').value.trim();
+            const telegramGroupId = document.getElementById('groupTelegramId').value.trim();
+
+            if (!name || !telegramGroupId) {
+                document.getElementById('addGroupStatus').textContent = '⚠️ Please fill in all fields.';
+                return;
+            }
+
+            document.getElementById('addGroupStatus').textContent = 'Adding group...';
+
+            try {
+                const response = await fetch('/api/teacher/groups', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        telegram_group_id: parseInt(telegramGroupId)
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    document.getElementById('addGroupStatus').textContent = '✅ Group added successfully! (ID: ' + data.group_id + ')';
+                    setTimeout(() => showAddGroup(), 2000);
+                } else {
+                    document.getElementById('addGroupStatus').textContent = '❌ ' + (data.message || 'Failed to add group.');
+                }
+            } catch (error) {
+                document.getElementById('addGroupStatus').textContent = '❌ Error adding group.';
             }
         }
 
