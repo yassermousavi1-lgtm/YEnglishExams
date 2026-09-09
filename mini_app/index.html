@@ -162,7 +162,6 @@
                         <button class="primary-button" style="padding: 16px;" onclick="showCreateExam()">📝 Create Exam</button>
                         <button class="primary-button" style="padding: 16px;" onclick="showSendExam()">📤 Send Exam</button>
                     </div>
-                    <button class="secondary-button" style="margin-top: 20px; padding: 12px 24px;" onclick="renderDashboard(USER_DATA)">🏠 Back to Dashboard</button>
                     <p style="color: #6b7280; margin-top: 30px; font-size: 14px;">More features coming soon...</p>
                 </div>
             `;
@@ -202,7 +201,7 @@
             }
         }
 
-        // ---------- Exams List (با حذف و دسته‌بندی) ----------
+        // ---------- Exams List (با ویرایش و حذف) ----------
         async function loadExams() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
             try {
@@ -212,7 +211,6 @@
                     return;
                 }
 
-                // گروه‌بندی بر اساس دسته (category)
                 const grouped = {};
                 data.exams.forEach(e => {
                     const cat = e.category || 'Uncategorized';
@@ -243,7 +241,8 @@
                                         <span style="color: #9ca3af; font-size: 14px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
                                     </div>
                                     <div>
-                                        <button class="secondary-button" style="padding: 4px 12px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;" onclick="deleteExam(${e.id})">❌</button>
+                                        <button style="background: none; border: none; color: #fbbf24; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="showEditExam(${e.id})" title="Edit Exam">✏️</button>
+                                        <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="deleteExam(${e.id})" title="Delete Exam">✕</button>
                                     </div>
                                 </div>
                             `;
@@ -256,6 +255,68 @@
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading exams.');
+            }
+        }
+
+        // ---------- Show Edit Exam Form ----------
+        function showEditExam(examId) {
+            // دریافت اطلاعات آزمون
+            fetchAPI('/api/teacher/exams').then(data => {
+                const exam = data.exams.find(e => e.id === examId);
+                if (!exam) {
+                    alert('Exam not found.');
+                    return;
+                }
+                document.querySelector('.exam-card').innerHTML = `
+                    <div style="padding: 20px;">
+                        <h2 style="color: #f9fafb;">✏️ Edit Exam</h2>
+                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="loadExams()">← Back</button>
+                        <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
+                            <input id="editExamTitle" type="text" value="${exam.title}" placeholder="Exam Title" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                            <input id="editExamCategory" type="text" value="${exam.category || ''}" placeholder="Category" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                            <input id="editExamTimeLimit" type="number" value="${exam.time_limit}" placeholder="Total Time (minutes)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                            <button class="primary-button" style="padding: 14px;" onclick="updateExam(${examId})">Save Changes</button>
+                        </div>
+                        <div id="editExamStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                    </div>
+                `;
+            });
+        }
+
+        // ---------- Update Exam ----------
+        async function updateExam(examId) {
+            const title = document.getElementById('editExamTitle').value.trim();
+            const category = document.getElementById('editExamCategory').value.trim();
+            const timeLimit = document.getElementById('editExamTimeLimit').value.trim();
+
+            if (!title || !timeLimit) {
+                document.getElementById('editExamStatus').textContent = '⚠️ Title and Time are required.';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/teacher/exams', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        exam_id: examId,
+                        title: title,
+                        category: category || 'Uncategorized',
+                        time_limit: parseInt(timeLimit)
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    document.getElementById('editExamStatus').textContent = '✅ Exam updated successfully!';
+                    setTimeout(() => loadExams(), 1500);
+                } else {
+                    document.getElementById('editExamStatus').textContent = '❌ ' + (data.message || 'Failed to update exam.');
+                }
+            } catch (error) {
+                document.getElementById('editExamStatus').textContent = '❌ Error updating exam.';
             }
         }
 
@@ -284,7 +345,7 @@
             }
         }
 
-        // ---------- Results List (با تاریخ، ساعت و دکمه Share) ----------
+        // ---------- Results List (با Share و حذف) ----------
         async function loadResults() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
             try {
@@ -314,8 +375,8 @@
                                         <span style="color: #9ca3af; font-size: 12px; display: block;">📅 ${date}</span>
                                     </div>
                                     <div>
-                                        <button class="secondary-button" style="padding: 4px 12px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 6px;" onclick="shareResult(${r.id}, '${r.student_name}', ${r.score}, ${r.total_questions}, '${r.exam_title}', '${date}')">📤</button>
-                                        <button class="secondary-button" style="padding: 4px 12px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;" onclick="deleteResult(${r.id})">❌</button>
+                                        <button style="background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="shareResult(${r.id})" title="Share Result">📤</button>
+                                        <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="deleteResult(${r.id})" title="Delete Result">✕</button>
                                     </div>
                                 </div>
                             </div>
@@ -329,11 +390,48 @@
             }
         }
 
-        // ---------- Share Result ----------
-        function shareResult(id, studentName, score, total, examTitle, date) {
-            const message = `📊 *Exam Result*\n\n👤 Student: ${studentName}\n📝 Exam: ${examTitle}\n📅 Date: ${date}\n✅ Score: ${score}/${total} (${Math.round((score/total)*100)}%)\n\n#YEnglishExams`;
-            const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(message)}`;
-            window.open(shareUrl, '_blank');
+        // ---------- Share Result (با سوالات اشتباه) ----------
+        async function shareResult(resultId) {
+            try {
+                const data = await fetchAPI(`/api/teacher/result_details/${resultId}`);
+                if (data.status !== 'success') {
+                    alert('Failed to load result details.');
+                    return;
+                }
+
+                const r = data.result;
+                const percentage = Math.round((r.score / r.total_questions) * 100);
+
+                let message = `📊 *Exam Result*\n\n`;
+                message += `👤 Student: ${r.student_name}\n`;
+                message += `📝 Exam: ${r.exam_title}\n`;
+                message += `📅 Date: ${new Date(r.completed_at).toLocaleString()}\n`;
+                message += `✅ Score: ${r.score}/${r.total_questions} (${percentage}%)\n\n`;
+
+                // پیدا کردن سوالات اشتباه
+                const wrongQuestions = [];
+                // برای این کار، باید پاسخ‌های دانشجو را داشته باشیم. فعلاً فقط سوالات را نمایش می‌دهیم.
+                // در نسخه بعدی، پاسخ‌های دانشجو هم ذخیره می‌شود.
+
+                if (wrongQuestions.length > 0) {
+                    message += `❌ *Wrong Answers:*\n`;
+                    wrongQuestions.forEach((q, i) => {
+                        message += `${i+1}. ${q.question_text}\n`;
+                        message += `   Your answer: ${q.your_answer}\n`;
+                        message += `   Correct answer: ${q.correct_answer}\n\n`;
+                    });
+                } else {
+                    message += `🎉 *All answers are correct!*\n`;
+                }
+
+                message += `\n#YEnglishExams`;
+
+                const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(message)}`;
+                window.open(shareUrl, '_blank');
+
+            } catch (error) {
+                alert('Error loading result details.');
+            }
         }
 
         // ---------- Delete Result ----------
@@ -549,7 +647,7 @@
                                     <div>
                                         ${isAssigned ? 
                                             `<button class="primary-button" style="padding: 4px 12px; margin-right: 4px;" onclick="sendExamByExamId(${e.id})">📤 Send</button>
-                                             <button class="secondary-button" style="padding: 4px 12px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer;" onclick="unassignExam(${e.id})">🔓 Unassign</button>` :
+                                             <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; padding: 4px 8px;" onclick="unassignExam(${e.id})" title="Unassign">🔓</button>` :
                                             `<button class="primary-button" style="padding: 4px 12px; background: #2563eb;" onclick="assignAndSendExam(${e.id})">📌 Assign & Send</button>`
                                         }
                                     </div>

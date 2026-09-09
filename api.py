@@ -29,15 +29,11 @@ INIT_DATA_MAX_AGE = 3600
 def get_database_connection():
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
-    
-    # اضافه کردن ستون category به جدول exams اگر وجود نداشته باشد
     try:
         connection.execute("ALTER TABLE exams ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
         connection.commit()
     except:
-        # ستون از قبل وجود دارد
         pass
-    
     return connection
 
 
@@ -108,7 +104,7 @@ def check_exam_access(student_id, group_id, exam_id, connection):
 
 def send_result_to_teacher(student, exam, score, total_questions, completed_at):
     if not TELEGRAM_BOT_TOKEN or not TEACHER_TELEGRAM_ID:
-        print("Teacher notification skipped: missing config.")
+        print("Teacher notification skipped.")
         return False
     first_name = (student["first_name"] or "").strip()
     last_name = (student["last_name"] or "").strip()
@@ -128,12 +124,10 @@ def send_result_to_teacher(student, exam, score, total_questions, completed_at):
     payload = {"chat_id": TEACHER_TELEGRAM_ID, "text": message, "parse_mode": "HTML"}
     try:
         response = requests.post(telegram_url, json=payload, timeout=10)
-        response_data = response.json()
-        if not response.ok or not response_data.get("ok"):
-            print("Teacher notification failed:", response_data)
-            return False
-        print("Teacher notification sent successfully.")
-        return True
+        if response.ok and response.json().get("ok"):
+            print("Teacher notification sent.")
+            return True
+        return False
     except Exception as error:
         print("Teacher notification error:", error)
         return False
@@ -307,7 +301,7 @@ def submit_exam():
         """, (student["id"], exam_id, score, total_questions, started_at, completed_at))
         result_id = cursor.lastrowid
         connection.commit()
-        notification_sent = send_result_to_teacher(student, exam, score, total_questions, completed_at)
+        send_result_to_teacher(student, exam, score, total_questions, completed_at)
         return jsonify({
             "status": "success",
             "message": "Exam submitted successfully.",
@@ -318,7 +312,7 @@ def submit_exam():
                 "score": score,
                 "total_questions": total_questions,
                 "completed_at": completed_at,
-                "teacher_notified": notification_sent
+                "teacher_notified": True
             }
         })
     except Exception as error:
@@ -349,8 +343,7 @@ def teacher_get_students():
             FROM students s JOIN groups g ON g.id = s.group_id ORDER BY s.id
         """)
         students = cursor.fetchall()
-        student_list = [{"id": s["id"], "telegram_user_id": s["telegram_user_id"], "first_name": s["first_name"], "last_name": s["last_name"], "username": s["username"], "group_id": s["group_id"], "group_name": s["group_name"], "telegram_group_id": s["telegram_group_id"]} for s in students]
-        return jsonify({"status": "success", "students": student_list, "total": len(student_list)})
+        return jsonify({"status": "success", "students": [{"id": s["id"], "telegram_user_id": s["telegram_user_id"], "first_name": s["first_name"], "last_name": s["last_name"], "username": s["username"], "group_id": s["group_id"], "group_name": s["group_name"], "telegram_group_id": s["telegram_group_id"]} for s in students], "total": len(students)})
     finally:
         connection.close()
 
@@ -379,10 +372,7 @@ def teacher_add_student():
         cursor.execute("SELECT id FROM groups WHERE id = ?", (group_id,))
         if not cursor.fetchone():
             return jsonify({"status": "error", "message": "Group not found."}), 404
-        cursor.execute("""
-            INSERT INTO students (telegram_user_id, first_name, last_name, username, group_id)
-            VALUES (?, ?, ?, ?, ?)
-        """, (telegram_user_id, first_name, last_name, username, group_id))
+        cursor.execute("INSERT INTO students (telegram_user_id, first_name, last_name, username, group_id) VALUES (?, ?, ?, ?, ?)", (telegram_user_id, first_name, last_name, username, group_id))
         connection.commit()
         return jsonify({"status": "success", "message": "Student added successfully.", "student_id": cursor.lastrowid})
     except sqlite3.IntegrityError:
@@ -481,6 +471,38 @@ def teacher_delete_exam():
         connection.close()
 
 
+@app.route("/api/teacher/exams", methods=["PUT"])
+def teacher_update_exam():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    exam_id = data.get("exam_id")
+    title = data.get("title", "").strip()
+    time_limit = data.get("time_limit")
+    category = data.get("category", "").strip()
+    if not exam_id or not title or not time_limit:
+        return jsonify({"status": "error", "message": "exam_id, title, and time_limit are required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("UPDATE exams SET title = ?, time_limit = ?, category = ? WHERE id = ?", (title, time_limit, category, exam_id))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Exam not found."}), 404
+        return jsonify({"status": "success", "message": "Exam updated successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
 @app.route("/api/teacher/assignments")
 def teacher_get_assignments():
     auth_result = get_authenticated_user()
@@ -543,6 +565,35 @@ def teacher_get_results():
         connection.close()
 
 
+@app.route("/api/teacher/results", methods=["DELETE"])
+def teacher_delete_result():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    result_id = data.get("result_id")
+    if not result_id:
+        return jsonify({"status": "error", "message": "result_id is required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("DELETE FROM results WHERE id = ?", (result_id,))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Result not found."}), 404
+        return jsonify({"status": "success", "message": "Result deleted successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
 @app.route("/api/teacher/exams_with_questions", methods=["POST"])
 def teacher_create_exam_with_questions():
     auth_result = get_authenticated_user()
@@ -575,10 +626,7 @@ def teacher_create_exam_with_questions():
             correct_answer = q.get("correct_answer", "").strip().upper()
             if not all([question_text, option_a, option_b, option_c, option_d, correct_answer]) or correct_answer not in ["A", "B", "C", "D"]:
                 raise ValueError("Invalid question data.")
-            cursor.execute("""
-                INSERT INTO questions (question_text, option_a, option_b, option_c, option_d, correct_answer)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (question_text, option_a, option_b, option_c, option_d, correct_answer))
+            cursor.execute("INSERT INTO questions (question_text, option_a, option_b, option_c, option_d, correct_answer) VALUES (?, ?, ?, ?, ?, ?)", (question_text, option_a, option_b, option_c, option_d, correct_answer))
             question_id = cursor.lastrowid
             question_ids.append(question_id)
         for order, qid in enumerate(question_ids, start=1):
@@ -626,6 +674,33 @@ def teacher_assign_exam():
         connection.close()
 
 
+@app.route("/api/teacher/unassign_exam", methods=["POST"])
+def teacher_unassign_exam():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    exam_id = data.get("exam_id")
+    if not exam_id:
+        return jsonify({"status": "error", "message": "exam_id required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
+        connection.commit()
+        return jsonify({"status": "success", "message": "Exam unassigned successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
 @app.route("/api/teacher/send_exam_by_exam_id", methods=["POST"])
 def teacher_send_exam_by_exam_id():
     auth_result = get_authenticated_user()
@@ -665,6 +740,63 @@ def teacher_send_exam_by_exam_id():
     except Exception as error:
         print("SEND EXAM ERROR:", error)
         return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/result_details/<int:result_id>")
+def teacher_result_details(result_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at,
+                   s.first_name, s.last_name, s.telegram_user_id,
+                   e.id AS exam_id, e.title AS exam_title
+            FROM results r
+            JOIN students s ON s.id = r.student_id
+            JOIN exams e ON e.id = r.exam_id
+            WHERE r.id = ?
+        """, (result_id,))
+        result = cursor.fetchone()
+        if not result:
+            return jsonify({"status": "error", "message": "Result not found."}), 404
+        cursor.execute("""
+            SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_answer,
+                   eq.question_order
+            FROM exam_questions eq
+            JOIN questions q ON q.id = eq.question_id
+            WHERE eq.exam_id = ?
+            ORDER BY eq.question_order
+        """, (result["exam_id"],))
+        questions = cursor.fetchall()
+        question_list = []
+        for q in questions:
+            question_list.append({
+                "id": q["id"],
+                "question_text": q["question_text"],
+                "options": {"A": q["option_a"], "B": q["option_b"], "C": q["option_c"], "D": q["option_d"]},
+                "correct_answer": q["correct_answer"],
+                "question_order": q["question_order"]
+            })
+        return jsonify({
+            "status": "success",
+            "result": {
+                "id": result["id"],
+                "student_name": f"{result['first_name']} {result['last_name'] or ''}".strip(),
+                "exam_title": result["exam_title"],
+                "score": result["score"],
+                "total_questions": result["total_questions"],
+                "completed_at": result["completed_at"],
+                "questions": question_list
+            }
+        })
     finally:
         connection.close()
 
