@@ -236,7 +236,7 @@
             }
         }
 
-        // ---------- Create Exam ----------
+        // ---------- Create Exam (with JSON) ----------
         function showCreateExam() {
             appRoot.innerHTML = `
                 <div style="padding: 20px;">
@@ -244,36 +244,67 @@
                     <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
                     <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
                         <input id="examTitle" type="text" placeholder="Exam Title" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="examTimeLimit" type="number" placeholder="Time Limit (minutes)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="examQuestionIds" type="text" placeholder="Question IDs (comma separated, e.g. 1,2,3)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <button class="primary-button" style="padding: 14px;" onclick="createExam()">Create Exam</button>
+                        <input id="examTimeLimit" type="number" placeholder="Total Time (minutes)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <input id="examQuestionCount" type="number" placeholder="Number of Questions" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                        <textarea id="examQuestionsJson" rows="12" placeholder='[
+  {
+    "question_text": "What is the capital of France?",
+    "option_a": "Berlin",
+    "option_b": "Madrid",
+    "option_c": "Paris",
+    "option_d": "Rome",
+    "correct_answer": "C"
+  },
+  {
+    "question_text": "What is 2 + 2?",
+    "option_a": "3",
+    "option_b": "4",
+    "option_c": "5",
+    "option_d": "6",
+    "correct_answer": "B"
+  }
+]' style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb; font-family: monospace; resize: vertical; direction: ltr;"></textarea>
+                        <button class="primary-button" style="padding: 14px;" onclick="createExamWithJson()">Create Exam</button>
                     </div>
                     <div id="createExamStatus" style="margin-top: 12px; color: #9ca3af;"></div>
                 </div>
             `;
         }
 
-        // ---------- Create Exam API ----------
-        async function createExam() {
+        // ---------- Create Exam with JSON API ----------
+        async function createExamWithJson() {
             const title = document.getElementById('examTitle').value.trim();
             const timeLimit = document.getElementById('examTimeLimit').value.trim();
-            const questionIds = document.getElementById('examQuestionIds').value.trim();
+            const questionCount = document.getElementById('examQuestionCount').value.trim();
+            const questionsJson = document.getElementById('examQuestionsJson').value.trim();
 
-            if (!title || !timeLimit || !questionIds) {
+            if (!title || !timeLimit || !questionCount || !questionsJson) {
                 document.getElementById('createExamStatus').textContent = '⚠️ Please fill in all fields.';
                 return;
             }
 
-            const ids = questionIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-            if (ids.length === 0) {
-                document.getElementById('createExamStatus').textContent = '⚠️ Please enter valid question IDs.';
+            let questions;
+            try {
+                questions = JSON.parse(questionsJson);
+            } catch (error) {
+                document.getElementById('createExamStatus').textContent = '⚠️ Invalid JSON format. Please check your input.';
                 return;
             }
 
-            document.getElementById('createExamStatus').textContent = 'Creating exam...';
+            if (!Array.isArray(questions) || questions.length === 0) {
+                document.getElementById('createExamStatus').textContent = '⚠️ Questions must be a non-empty array.';
+                return;
+            }
+
+            if (questions.length !== parseInt(questionCount)) {
+                document.getElementById('createExamStatus').textContent = '⚠️ Number of questions does not match the JSON data.';
+                return;
+            }
+
+            document.getElementById('createExamStatus').textContent = 'Creating exam and saving questions...';
 
             try {
-                const response = await fetch('/api/teacher/exams', {
+                const response = await fetch('/api/teacher/exams_with_questions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -282,7 +313,7 @@
                     body: JSON.stringify({
                         title: title,
                         time_limit: parseInt(timeLimit),
-                        question_ids: ids
+                        questions: questions
                     })
                 });
                 const data = await response.json();

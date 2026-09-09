@@ -1929,3 +1929,142 @@ if __name__ == "__main__":
         port=5000,
         debug=False
     )
+
+
+# ============================================================
+# TEACHER: CREATE EXAM WITH QUESTIONS (JSON)
+# ============================================================
+
+@app.route("/api/teacher/exams_with_questions", methods=["POST"])
+def teacher_create_exam_with_questions():
+    """
+    Create a new exam and save all questions from JSON.
+    Teacher only.
+    """
+
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({
+            "status": "error",
+            "message": auth_result["message"]
+        }), 401
+
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({
+            "status": "error",
+            "message": "Access denied. Teacher only."
+        }), 403
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({
+            "status": "error",
+            "message": "Request body is missing or invalid."
+        }), 400
+
+    title = data.get("title", "").strip()
+    time_limit = data.get("time_limit")
+    questions_data = data.get("questions", [])
+
+    if not title:
+        return jsonify({
+            "status": "error",
+            "message": "title is required."
+        }), 400
+
+    if not time_limit or time_limit <= 0:
+        return jsonify({
+            "status": "error",
+            "message": "time_limit must be a positive number."
+        }), 400
+
+    if not questions_data or not isinstance(questions_data, list):
+        return jsonify({
+            "status": "error",
+            "message": "questions must be a non-empty array."
+        }), 400
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    try:
+        # 1. Create the exam
+        cursor.execute(
+            """
+            INSERT INTO exams (title, time_limit)
+            VALUES (?, ?)
+            """,
+            (title, time_limit)
+        )
+        exam_id = cursor.lastrowid
+
+        # 2. Save each question and link to exam
+        question_ids = []
+        for q in questions_data:
+            question_text = q.get("question_text", "").strip()
+            option_a = q.get("option_a", "").strip()
+            option_b = q.get("option_b", "").strip()
+            option_c = q.get("option_c", "").strip()
+            option_d = q.get("option_d", "").strip()
+            correct_answer = q.get("correct_answer", "").strip().upper()
+
+            if not all([question_text, option_a, option_b, option_c, option_d, correct_answer]):
+                raise ValueError("Each question must have all fields: question_text, option_a, option_b, option_c, option_d, correct_answer")
+
+            if correct_answer not in ["A", "B", "C", "D"]:
+                raise ValueError(f"correct_answer must be A, B, C, or D. Got: {correct_answer}")
+
+            cursor.execute(
+                """
+                INSERT INTO questions (
+                    question_text,
+                    option_a,
+                    option_b,
+                    option_c,
+                    option_d,
+                    correct_answer
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (question_text, option_a, option_b, option_c, option_d, correct_answer)
+            )
+            question_id = cursor.lastrowid
+            question_ids.append(question_id)
+
+        # 3. Link questions to exam
+        for order, qid in enumerate(question_ids, start=1):
+            cursor.execute(
+                """
+                INSERT INTO exam_questions (exam_id, question_id, question_order)
+                VALUES (?, ?, ?)
+                """,
+                (exam_id, qid, order)
+            )
+
+        connection.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "Exam and questions created successfully.",
+            "exam_id": exam_id,
+            "total_questions": len(question_ids)
+        })
+
+    except ValueError as error:
+        connection.rollback()
+        return jsonify({
+            "status": "error",
+            "message": str(error)
+        }), 400
+
+    except Exception as error:
+        connection.rollback()
+        print("CREATE EXAM ERROR:", error)
+        return jsonify({
+            "status": "error",
+            "message": "An internal server error occurred."
+        }), 500
+
+    finally:
+        connection.close()
