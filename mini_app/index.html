@@ -12,8 +12,57 @@
 <body>
 
     <main class="app-container">
-        <section class="exam-card" id="appRoot">
-            <!-- محتوای صفحه توسط JavaScript ساخته می‌شود -->
+        <section class="exam-card">
+
+            <!-- ==================================================
+                 EXAM HEADER
+                 ================================================== -->
+
+            <header class="exam-header">
+                <div class="exam-title-section">
+                    <div class="exam-icon">📝</div>
+                    <div>
+                        <h1 id="examTitle">Loading...</h1>
+                        <p id="welcomeText">Authenticating...</p>
+                    </div>
+                </div>
+                <div id="timer" class="timer">00:00</div>
+            </header>
+
+            <!-- ==================================================
+                 PROGRESS
+                 ================================================== -->
+
+            <div class="progress-section">
+                <div class="progress-info">
+                    <span id="questionProgress">Question 1 of 1</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <!-- ==================================================
+                 QUESTION
+                 ================================================== -->
+
+            <section id="questionContainer" class="question-container"></section>
+
+            <!-- ==================================================
+                 NAVIGATION
+                 ================================================== -->
+
+            <div class="navigation">
+                <button id="previousButton" class="secondary-button" type="button">← Previous</button>
+                <button id="nextButton" class="primary-button" type="button">Next →</button>
+            </div>
+
+            <!-- ==================================================
+                 STATUS
+                 ================================================== -->
+
+            <div id="status" class="status">Authenticating with Telegram...</div>
+
         </section>
     </main>
 
@@ -33,7 +82,15 @@
         // DOM REFERENCE
         // ============================================================
 
-        const appRoot = document.getElementById('appRoot');
+        const examTitleElement = document.getElementById('examTitle');
+        const welcomeTextElement = document.getElementById('welcomeText');
+        const timerElement = document.getElementById('timer');
+        const questionProgressElement = document.getElementById('questionProgress');
+        const progressFillElement = document.getElementById('progressFill');
+        const questionContainer = document.getElementById('questionContainer');
+        const previousButton = document.getElementById('previousButton');
+        const nextButton = document.getElementById('nextButton');
+        const statusElement = document.getElementById('status');
 
         // ============================================================
         // STATE
@@ -48,6 +105,19 @@
         let timerInterval = null;
         let startedAt = null;
         let isSubmitting = false;
+        let examId = null;
+
+        // ============================================================
+        // TELEGRAM USER
+        // ============================================================
+
+        const telegramUser = telegram?.initDataUnsafe?.user;
+
+        if (telegramUser) {
+            welcomeTextElement.textContent = `Welcome ${telegramUser.first_name || 'Student'}`;
+        } else {
+            welcomeTextElement.textContent = 'Telegram user not available.';
+        }
 
         // ============================================================
         // API HELPERS
@@ -79,7 +149,7 @@
 
         // ---------- Dashboard ----------
         function renderDashboard(userData) {
-            appRoot.innerHTML = `
+            document.querySelector('.exam-card').innerHTML = `
                 <div style="text-align: center; padding: 20px;">
                     <div style="font-size: 48px; margin-bottom: 10px;">👨‍🏫</div>
                     <h1 style="color: #f9fafb;">Teacher Panel</h1>
@@ -100,7 +170,7 @@
 
         // ---------- Students List ----------
         async function loadStudents() {
-            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading students...</p></div>`;
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading students...</p></div>`;
             try {
                 const data = await fetchAPI('/api/teacher/students');
                 if (data.status !== 'success') {
@@ -126,7 +196,7 @@
                     });
                 }
                 html += `</div></div>`;
-                appRoot.innerHTML = html;
+                document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading students.');
             }
@@ -134,7 +204,7 @@
 
         // ---------- Exams List ----------
         async function loadExams() {
-            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
             try {
                 const data = await fetchAPI('/api/teacher/exams');
                 if (data.status !== 'success') {
@@ -160,7 +230,7 @@
                     });
                 }
                 html += `</div></div>`;
-                appRoot.innerHTML = html;
+                document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading exams.');
             }
@@ -168,7 +238,7 @@
 
         // ---------- Results List ----------
         async function loadResults() {
-            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
             try {
                 const data = await fetchAPI('/api/teacher/results');
                 if (data.status !== 'success') {
@@ -195,7 +265,7 @@
                     });
                 }
                 html += `</div></div>`;
-                appRoot.innerHTML = html;
+                document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading results.');
             }
@@ -203,7 +273,7 @@
 
         // ---------- Add Student Form ----------
         function showAddStudent() {
-            appRoot.innerHTML = `
+            document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
                     <h2 style="color: #f9fafb;">➕ Add Student</h2>
                     <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
@@ -261,7 +331,7 @@
 
         // ---------- Create Exam (with JSON) ----------
         function showCreateExam() {
-            appRoot.innerHTML = `
+            document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
                     <h2 style="color: #f9fafb;">📝 Create Exam</h2>
                     <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
@@ -353,7 +423,7 @@
 
         // ---------- Send Exam (with Assign & Send) ----------
         async function showSendExam() {
-            appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
             try {
                 const [examsData, assignmentsData] = await Promise.all([
                     fetchAPI('/api/teacher/exams'),
@@ -397,7 +467,7 @@
                 }
 
                 html += `</div></div>`;
-                appRoot.innerHTML = html;
+                document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading data.');
             }
@@ -409,7 +479,7 @@
 
             const statusDiv = document.createElement('div');
             statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af; text-align: center;';
-            document.querySelector('#appRoot > div').appendChild(statusDiv);
+            document.querySelector('.exam-card > div').appendChild(statusDiv);
             statusDiv.textContent = 'Assigning exam to group...';
 
             try {
@@ -462,7 +532,7 @@
         async function sendExamByExamId(examId) {
             const statusDiv = document.createElement('div');
             statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af; text-align: center;';
-            document.querySelector('#appRoot > div').appendChild(statusDiv);
+            document.querySelector('.exam-card > div').appendChild(statusDiv);
             statusDiv.textContent = 'Sending exam...';
 
             try {
@@ -490,7 +560,7 @@
 
         // ---------- Error ----------
         function showError(message) {
-            appRoot.innerHTML = `
+            document.querySelector('.exam-card').innerHTML = `
                 <div style="text-align: center; padding: 40px 20px;">
                     <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
                     <h1 style="color: #fca5a5;">Error</h1>
@@ -500,31 +570,11 @@
             `;
         }
 
-        // ---------- Student Exam Loading ----------
-        function renderStudentExam() {
-            appRoot.innerHTML = `
-                <div style="text-align: center; padding: 40px 20px;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">📚</div>
-                    <h1 style="color: #f9fafb;">Loading Exam...</h1>
-                    <p style="color: #9ca3af;">Please wait while we prepare your exam.</p>
-                    <div id="examError" style="margin-top: 20px; color: #fca5a5; font-weight: bold;"></div>
-                    <div style="margin-top: 20px; display: flex; justify-content: center;">
-                        <div style="width: 40px; height: 40px; border: 4px solid #374151; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                    </div>
-                    <style>
-                        @keyframes spin {
-                            to { transform: rotate(360deg); }
-                        }
-                    </style>
-                </div>
-            `;
-        }
-
         // ---------- Load Exam (واقعی) ----------
         async function loadExam(examId) {
             try {
                 // نمایش صفحه Loading
-                renderStudentExam();
+                statusElement.textContent = 'Loading exam...';
 
                 // دریافت اطلاعات آزمون از سرور
                 const response = await fetch(`/api/exam/${examId}/questions`, {
@@ -567,12 +617,12 @@
 
                 // شروع آزمون
                 startedAt = new Date().toISOString();
-                document.getElementById('examTitle').textContent = exam.title;
+                examTitleElement.textContent = exam.title;
                 remainingSeconds = Number(exam.time_limit) * 60;
                 startTimer();
                 currentQuestionIndex = 0;
                 renderCurrentQuestion();
-                document.getElementById('status').textContent = '';
+                statusElement.textContent = '';
 
             } catch (error) {
                 showError('Unexpected Error: ' + error.message);
@@ -588,23 +638,22 @@
             const totalQuestions = questions.length;
 
             // به‌روزرسانی هدر
-            document.getElementById('questionProgress').textContent = `Question ${questionNumber} of ${totalQuestions}`;
-            document.getElementById('progressFill').style.width = `${(questionNumber / totalQuestions) * 100}%`;
+            questionProgressElement.textContent = `Question ${questionNumber} of ${totalQuestions}`;
+            progressFillElement.style.width = `${(questionNumber / totalQuestions) * 100}%`;
 
-            const container = document.getElementById('questionContainer');
-            container.innerHTML = '';
+            questionContainer.innerHTML = '';
 
             // شماره سوال
             const numberEl = document.createElement('div');
             numberEl.className = 'question-number';
             numberEl.textContent = `Question ${questionNumber}`;
-            container.appendChild(numberEl);
+            questionContainer.appendChild(numberEl);
 
             // متن سوال
             const textEl = document.createElement('h2');
             textEl.className = 'question-text';
             textEl.textContent = question.question_text;
-            container.appendChild(textEl);
+            questionContainer.appendChild(textEl);
 
             // گزینه‌ها
             const optionsContainer = document.createElement('div');
@@ -636,7 +685,7 @@
                 optionsContainer.appendChild(btn);
             });
 
-            container.appendChild(optionsContainer);
+            questionContainer.appendChild(optionsContainer);
             updateNavigationButtons();
         }
 
@@ -648,17 +697,14 @@
 
         // ---------- Navigation ----------
         function updateNavigationButtons() {
-            const prev = document.getElementById('previousButton');
-            const next = document.getElementById('nextButton');
-
-            prev.disabled = currentQuestionIndex === 0 || isSubmitting;
+            previousButton.disabled = currentQuestionIndex === 0 || isSubmitting;
 
             if (currentQuestionIndex === questions.length - 1) {
-                next.textContent = 'Submit Exam';
+                nextButton.textContent = 'Submit Exam';
             } else {
-                next.textContent = 'Next →';
+                nextButton.textContent = 'Next →';
             }
-            next.disabled = isSubmitting;
+            nextButton.disabled = isSubmitting;
         }
 
         // ---------- Timer ----------
@@ -673,10 +719,10 @@
                 if (remainingSeconds <= 0) {
                     clearInterval(timerInterval);
                     timerInterval = null;
-                    document.getElementById('timer').textContent = '00:00';
+                    timerElement.textContent = '00:00';
                     isSubmitting = true;
                     updateNavigationButtons();
-                    document.getElementById('status').textContent = 'Time is up.';
+                    statusElement.textContent = 'Time is up.';
                 }
             }, 1000);
         }
@@ -684,13 +730,13 @@
         function updateTimerDisplay() {
             const minutes = Math.floor(remainingSeconds / 60);
             const seconds = remainingSeconds % 60;
-            document.getElementById('timer').textContent =
+            timerElement.textContent =
                 `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
             if (remainingSeconds <= 60) {
-                document.getElementById('timer').classList.add('timer-warning');
+                timerElement.classList.add('timer-warning');
             } else {
-                document.getElementById('timer').classList.remove('timer-warning');
+                timerElement.classList.remove('timer-warning');
             }
         }
 
@@ -703,7 +749,7 @@
 
             isSubmitting = true;
             updateNavigationButtons();
-            document.getElementById('status').textContent = 'Submitting exam...';
+            statusElement.textContent = 'Submitting exam...';
 
             try {
                 const payload = {
@@ -745,7 +791,7 @@
             } catch (error) {
                 isSubmitting = false;
                 updateNavigationButtons();
-                document.getElementById('status').textContent = error.message || 'Could not submit the exam.';
+                statusElement.textContent = error.message || 'Could not submit the exam.';
             }
         }
 
@@ -755,12 +801,11 @@
             const total = result.total_questions;
             const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
 
-            document.getElementById('examTitle').textContent = 'Exam Completed';
-            document.getElementById('questionProgress').textContent = 'Result';
-            document.getElementById('progressFill').style.width = '100%';
+            examTitleElement.textContent = 'Exam Completed';
+            questionProgressElement.textContent = 'Result';
+            progressFillElement.style.width = '100%';
 
-            const container = document.getElementById('questionContainer');
-            container.innerHTML = '';
+            questionContainer.innerHTML = '';
 
             const box = document.createElement('div');
             box.className = 'result-box';
@@ -779,13 +824,37 @@
             box.appendChild(title);
             box.appendChild(scoreEl);
             box.appendChild(percentEl);
-            container.appendChild(box);
+            questionContainer.appendChild(box);
 
-            document.getElementById('previousButton').style.display = 'none';
-            document.getElementById('nextButton').style.display = 'none';
-            document.getElementById('timer').textContent = 'DONE';
-            document.getElementById('status').textContent = 'Your exam has been submitted successfully.';
+            previousButton.style.display = 'none';
+            nextButton.style.display = 'none';
+            timerElement.textContent = 'DONE';
+            statusElement.textContent = 'Your exam has been submitted successfully.';
         }
+
+        // ============================================================
+        // EVENT LISTENERS
+        // ============================================================
+
+        previousButton.addEventListener('click', () => {
+            if (currentQuestionIndex > 0 && !isSubmitting) {
+                currentQuestionIndex--;
+                renderCurrentQuestion();
+            }
+        });
+
+        nextButton.addEventListener('click', async () => {
+            if (isSubmitting) return;
+
+            if (currentQuestionIndex < questions.length - 1) {
+                currentQuestionIndex++;
+                renderCurrentQuestion();
+                return;
+            }
+
+            // آخرین سوال → ارسال
+            await submitExam();
+        });
 
         // ============================================================
         // MAIN APPLICATION
@@ -805,7 +874,7 @@
                 } else {
                     // دانشجو: دریافت examId از start_param
                     const startParam = telegram?.initDataUnsafe?.start_param || null;
-                    let examId = null;
+                    examId = null;
                     if (startParam && startParam.startsWith('exam_')) {
                         examId = startParam.substring(5);
                     }
@@ -823,32 +892,6 @@
                 showError('Unable to start the application.');
             }
         }
-
-        // ============================================================
-        // EVENT LISTENERS (برای دکمه‌های ناوبری)
-        // ============================================================
-
-        document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('previousButton')?.addEventListener('click', () => {
-                if (currentQuestionIndex > 0 && !isSubmitting) {
-                    currentQuestionIndex--;
-                    renderCurrentQuestion();
-                }
-            });
-
-            document.getElementById('nextButton')?.addEventListener('click', async () => {
-                if (isSubmitting) return;
-
-                if (currentQuestionIndex < questions.length - 1) {
-                    currentQuestionIndex++;
-                    renderCurrentQuestion();
-                    return;
-                }
-
-                // آخرین سوال → ارسال
-                await submitExam();
-            });
-        });
 
         // ============================================================
         // START
