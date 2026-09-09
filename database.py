@@ -188,6 +188,7 @@ def create_database():
             title TEXT NOT NULL,
 
             time_limit INTEGER NOT NULL,
+	     category TEXT DEFAULT 'Uncategorized',
 
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
