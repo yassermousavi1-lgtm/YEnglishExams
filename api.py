@@ -767,7 +767,6 @@ def teacher_assign_exam():
                 cursor.execute("INSERT INTO exam_assignments (exam_id, group_id) VALUES (?, ?)", (exam_id, group_id))
                 assigned_count += 1
             except sqlite3.IntegrityError:
-                # اگر قبلاً assigned شده، نادیده بگیر
                 pass
         connection.commit()
         return jsonify({"status": "success", "message": f"Exam assigned to {assigned_count} group(s)."})
@@ -776,6 +775,8 @@ def teacher_assign_exam():
         return jsonify({"status": "error", "message": str(error)}), 500
     finally:
         connection.close()
+
+
 @app.route("/api/teacher/unassign_exam", methods=["POST"])
 def teacher_unassign_exam():
     auth_result = get_authenticated_user()
@@ -796,27 +797,12 @@ def teacher_unassign_exam():
         # حذف انتساب‌ها
         cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
         
-        # حذف نتایج مربوط به این آزمون (تا دانشجو بتواند دوباره شرکت کند)
+        # حذف نتایج مربوط به این آزمون تا دانشجو بتواند دوباره شرکت کند
         cursor.execute("DELETE FROM results WHERE exam_id = ?", (exam_id,))
+        cursor.execute("DELETE FROM student_answers WHERE result_id IN (SELECT id FROM results WHERE exam_id = ?)", (exam_id,))
         
         connection.commit()
         return jsonify({"status": "success", "message": "Exam unassigned and results cleared."})
-    except Exception as error:
-        connection.rollback()
-        return jsonify({"status": "error", "message": str(error)}), 500
-    finally:
-        connection.close()
-
-
-
-
-
-
-
-
-
-        connection.commit()
-        return jsonify({"status": "success", "message": "Exam unassigned from all groups."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -917,7 +903,6 @@ def teacher_result_details(result_id):
         """, (result_id,))
         wrong_answers = cursor.fetchall()
         
-        # دریافت پاسخ‌ها با متن کامل
         wrong_list = []
         for w in wrong_answers:
             options = {
