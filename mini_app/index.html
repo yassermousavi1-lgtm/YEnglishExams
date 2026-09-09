@@ -93,14 +93,14 @@
                 if (data.students.length === 0) {
                     html += `<p style="color: #9ca3af;">No students registered yet.</p>`;
                 } else {
-                    data.students.forEach(s => {
-                        html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
-                                <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
-                                <span style="color: #9ca3af; font-size: 14px; display: block;">Group: ${s.group_name}</span>
-                            </div>
-                        `;
-                    });
+		data.students.forEach(s => {
+   		 html += `
+      		  <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+          		  <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
+           		 <span style="color: #9ca3af; font-size: 14px; display: block;">Telegram ID: ${s.telegram_user_id} | Group: ${s.group_name}</span>
+      		  </div>
+  		  `;
+		});
                 }
                 html += `</div></div>`;
                 appRoot.innerHTML = html;
