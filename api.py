@@ -776,8 +776,6 @@ def teacher_assign_exam():
         return jsonify({"status": "error", "message": str(error)}), 500
     finally:
         connection.close()
-
-
 @app.route("/api/teacher/unassign_exam", methods=["POST"])
 def teacher_unassign_exam():
     auth_result = get_authenticated_user()
@@ -795,7 +793,28 @@ def teacher_unassign_exam():
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
+        # حذف انتساب‌ها
         cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
+        
+        # حذف نتایج مربوط به این آزمون (تا دانشجو بتواند دوباره شرکت کند)
+        cursor.execute("DELETE FROM results WHERE exam_id = ?", (exam_id,))
+        
+        connection.commit()
+        return jsonify({"status": "success", "message": "Exam unassigned and results cleared."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+
+
+
+
+
+
+
         connection.commit()
         return jsonify({"status": "success", "message": "Exam unassigned from all groups."})
     except Exception as error:
