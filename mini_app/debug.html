@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YEnglish Exams - Debug Tool</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            background: #111827;
+            color: #f9fafb;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #1f2937;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid #374151;
+        }
+        .success { color: #34d399; }
+        .error { color: #fca5a5; }
+        .warning { color: #fbbf24; }
+        .info { color: #60a5fa; }
+        pre {
+            background: #111827;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+        button:hover { background: #1d4ed8; }
+        .status { margin: 8px 0; padding: 8px 12px; border-radius: 6px; }
+        .status-ok { background: #064e3b; color: #34d399; }
+        .status-fail { background: #7f1d1d; color: #fca5a5; }
+        .status-warn { background: #78350f; color: #fbbf24; }
+    </style>
+</head>
+<body>
+
+    <h1>🔍 YEnglish Exams - Debug Tool</h1>
+    <p style="color: #9ca3af;">This tool checks every part of the system to find the problem.</p>
+
+    <div id="results"></div>
+
+    <script>
+        // ============================================================
+        // TELEGRAM INITIALIZATION
+        // ============================================================
+
+        const telegram = window.Telegram?.WebApp;
+        let results = [];
+
+        function log(message, type = 'info') {
+            const colors = {
+                success: '✅',
+                error: '❌',
+                warning: '⚠️',
+                info: 'ℹ️'
+            };
+            results.push({ message, type, icon: colors[type] || '📌' });
+        }
+
+        function renderResults() {
+            const container = document.getElementById('results');
+            container.innerHTML = results.map(r => `
+                <div class="card">
+                    <div class="status status-${r.type === 'error' ? 'fail' : r.type === 'warning' ? 'warn' : 'ok'}">
+                        ${r.icon} ${r.message}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ============================================================
+        // TEST 1: TELEGRAM WEBAPP
+        // ============================================================
+
+        function testTelegram() {
+            log('📱 TEST 1: Telegram WebApp', 'info');
+
+            if (typeof window.Telegram !== 'undefined') {
+                log('✅ window.Telegram is defined', 'success');
+            } else {
+                log('❌ window.Telegram is NOT defined - This app must be opened from Telegram!', 'error');
+                return;
+            }
+
+            if (telegram) {
+                log('✅ telegram object exists', 'success');
+                log(`   Version: ${telegram.version || 'unknown'}`, 'info');
+            } else {
+                log('❌ telegram object is null - This app must be opened from Telegram!', 'error');
+                return;
+            }
+
+            const initData = telegram.initData;
+            if (initData && initData.length > 0) {
+                log(`✅ initData exists (length: ${initData.length} characters)`, 'success');
+                log(`   Preview: ${initData.substring(0, 100)}...`, 'info');
+            } else {
+                log('❌ initData is EMPTY - This is the main problem!', 'error');
+                log('   This means the app is NOT opened from inside Telegram.', 'error');
+                log('   Solution: Open from Telegram, not from browser.', 'error');
+            }
+
+            const user = telegram.initDataUnsafe?.user;
+            if (user) {
+                log(`✅ User detected: ${user.first_name || 'Unknown'} (ID: ${user.id || 'N/A'})`, 'success');
+            } else {
+                log('⚠️ No user data in initData', 'warning');
+            }
+
+            const startParam = telegram.initDataUnsafe?.start_param;
+            if (startParam) {
+                log(`✅ Start param: ${startParam}`, 'success');
+                const examId = startParam.replace('exam_', '');
+                log(`   Exam ID from start param: ${examId}`, 'info');
+            } else {
+                log('⚠️ No start_param - Exam ID not received from Telegram', 'warning');
+            }
+        }
+
+        // ============================================================
+        // TEST 2: API CONNECTION
+        // ============================================================
+
+        async function testAPI() {
+            log('🌐 TEST 2: API Connection', 'info');
+
+            try {
+                const response = await fetch('/api');
+                const data = await response.json();
+                if (data.status === 'ok') {
+                    log('✅ API is reachable', 'success');
+                    log(`   Message: ${data.message}`, 'info');
+                } else {
+                    log('⚠️ API responded but status is not ok', 'warning');
+                }
+            } catch (error) {
+                log(`❌ API is NOT reachable: ${error.message}`, 'error');
+                return;
+            }
+        }
+
+        // ============================================================
+        // TEST 3: AUTHENTICATION
+        // ============================================================
+
+        async function testAuth() {
+            log('🔐 TEST 3: Authentication', 'info');
+
+            if (!telegram?.initData) {
+                log('⏭️ Skipping auth test - initData is missing', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/me', {
+                    headers: {
+                        'X-Telegram-Init-Data': telegram.initData
+                    }
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    log('✅ Authentication successful', 'success');
+                    log(`   Role: ${data.role || 'student'}`, 'info');
+                    if (data.student) {
+                        log(`   Student: ${data.student.first_name} (ID: ${data.student.id})`, 'info');
+                    }
+                    if (data.is_teacher) {
+                        log('   👨‍🏫 You are logged in as TEACHER', 'success');
+                    }
+                } else {
+                    log(`❌ Authentication failed: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Auth request error: ${error.message}`, 'error');
+            }
+        }
+
+        // ============================================================
+        // TEST 4: EXAM ACCESS
+        // ============================================================
+
+        async function testExam() {
+            log('📝 TEST 4: Exam Access', 'info');
+
+            // Get exam ID from URL or start_param
+            let examId = null;
+            const urlParams = new URLSearchParams(window.location.search);
+            const startParam = telegram?.initDataUnsafe?.start_param || urlParams.get('startapp');
+
+            if (startParam && startParam.startsWith('exam_')) {
+                examId = startParam.replace('exam_', '');
+                log(`   Exam ID from start_param: ${examId}`, 'info');
+            } else {
+                log('⚠️ No exam_id found in start_param', 'warning');
+                log('   This is expected if you opened debug.html directly.', 'warning');
+                return;
+            }
+
+            if (!telegram?.initData) {
+                log('⏭️ Skipping exam test - initData is missing', 'warning');
+                return;
+            }
+
+            try {
+                // Test 4a: Get exam info
+                const infoResponse = await fetch(`/api/exam/${examId}`, {
+                    headers: {
+                        'X-Telegram-Init-Data': telegram.initData
+                    }
+                });
+                const infoData = await infoResponse.json();
+
+                if (infoData.status === 'success') {
+                    log(`✅ Exam found: ${infoData.exam.title}`, 'success');
+                    log(`   Time limit: ${infoData.exam.time_limit} minutes`, 'info');
+                } else {
+                    log(`❌ Exam access failed: ${infoData.message}`, 'error');
+                    return;
+                }
+
+                // Test 4b: Get exam questions
+                const questionsResponse = await fetch(`/api/exam/${examId}/questions`, {
+                    headers: {
+                        'X-Telegram-Init-Data': telegram.initData
+                    }
+                });
+                const questionsData = await questionsResponse.json();
+
+                if (questionsData.status === 'success') {
+                    log(`✅ Questions loaded successfully`, 'success');
+                    log(`   Total questions: ${questionsData.total_questions}`, 'info');
+                    if (questionsData.questions && questionsData.questions.length > 0) {
+                        log(`   First question: ${questionsData.questions[0].question_text.substring(0, 50)}...`, 'info');
+                    }
+                } else {
+                    log(`❌ Questions load failed: ${questionsData.message}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Exam test error: ${error.message}`, 'error');
+            }
+        }
+
+        // ============================================================
+        // TEST 5: ENVIRONMENT
+        // ============================================================
+
+        function testEnvironment() {
+            log('🖥️ TEST 5: Environment', 'info');
+
+            // Check if running inside Telegram
+            const isTelegram = !!telegram;
+            if (isTelegram) {
+                log('✅ Running inside Telegram WebView', 'success');
+            } else {
+                log('⚠️ Not running inside Telegram WebView - Some features may not work', 'warning');
+                log('   This is normal if you opened debug.html directly in browser', 'warning');
+            }
+
+            // Check URL
+            log(`   URL: ${window.location.href}`, 'info');
+
+            // Check user agent
+            const ua = navigator.userAgent;
+            if (ua.includes('Telegram')) {
+                log('✅ Telegram user agent detected', 'success');
+            } else {
+                log('⚠️ Telegram user agent not detected (normal in browser)', 'warning');
+            }
+        }
+
+        // ============================================================
+        // RUN ALL TESTS
+        // ============================================================
+
+        async function runAllTests() {
+            log('🚀 Starting Debug...', 'info');
+            log('', 'info');
+
+            testEnvironment();
+            log('', 'info');
+
+            testTelegram();
+            log('', 'info');
+
+            await testAPI();
+            log('', 'info');
+
+            await testAuth();
+            log('', 'info');
+
+            await testExam();
+            log('', 'info');
+
+            log('✅ Debug Complete!', 'success');
+            log('', 'info');
+
+            // Show summary
+            const errors = results.filter(r => r.type === 'error');
+            const warnings = results.filter(r => r.type === 'warning');
+
+            if (errors.length > 0) {
+                log(`❌ Found ${errors.length} error(s) that need fixing`, 'error');
+            } else if (warnings.length > 0) {
+                log(`⚠️ Found ${warnings.length} warning(s) to check`, 'warning');
+            } else {
+                log('🎉 All tests passed! The system should work.', 'success');
+            }
+
+            renderResults();
+        }
+
+        // ============================================================
+        // START
+        // ============================================================
+
+        runAllTests();
+    </script>
+
+</body>
+</html>
