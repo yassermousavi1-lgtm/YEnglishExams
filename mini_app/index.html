@@ -14,10 +14,6 @@
     <main class="app-container">
         <section class="exam-card">
 
-            <!-- ==================================================
-                 EXAM HEADER
-                 ================================================== -->
-
             <header class="exam-header">
                 <div class="exam-title-section">
                     <div class="exam-icon">📝</div>
@@ -29,10 +25,6 @@
                 <div id="timer" class="timer">00:00</div>
             </header>
 
-            <!-- ==================================================
-                 PROGRESS
-                 ================================================== -->
-
             <div class="progress-section">
                 <div class="progress-info">
                     <span id="questionProgress">Question 1 of 1</span>
@@ -42,24 +34,12 @@
                 </div>
             </div>
 
-            <!-- ==================================================
-                 QUESTION
-                 ================================================== -->
-
             <section id="questionContainer" class="question-container"></section>
-
-            <!-- ==================================================
-                 NAVIGATION
-                 ================================================== -->
 
             <div class="navigation">
                 <button id="previousButton" class="secondary-button" type="button">← Previous</button>
                 <button id="nextButton" class="primary-button" type="button">Next →</button>
             </div>
-
-            <!-- ==================================================
-                 STATUS
-                 ================================================== -->
 
             <div id="status" class="status">Authenticating with Telegram...</div>
 
@@ -106,6 +86,7 @@
         let startedAt = null;
         let isSubmitting = false;
         let examId = null;
+        let allGroups = [];
 
         // ============================================================
         // TELEGRAM USER
@@ -201,7 +182,7 @@
             }
         }
 
-        // ---------- Exams List (با ویرایش و حذف) ----------
+        // ---------- Exams List ----------
         async function loadExams() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
             try {
@@ -260,7 +241,6 @@
 
         // ---------- Show Edit Exam Form ----------
         function showEditExam(examId) {
-            // دریافت اطلاعات آزمون
             fetchAPI('/api/teacher/exams').then(data => {
                 const exam = data.exams.find(e => e.id === examId);
                 if (!exam) {
@@ -345,7 +325,7 @@
             }
         }
 
-        // ---------- Results List (با Share و حذف) ----------
+        // ---------- Results List ----------
         async function loadResults() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
             try {
@@ -390,7 +370,7 @@
             }
         }
 
-        // ---------- Share Result (با سوالات اشتباه) ----------
+        // ---------- Share Result ----------
         async function shareResult(resultId) {
             try {
                 const data = await fetchAPI(`/api/teacher/result_details/${resultId}`);
@@ -408,10 +388,10 @@
                 message += `📅 Date: ${new Date(r.completed_at).toLocaleString()}\n`;
                 message += `✅ Score: ${r.score}/${r.total_questions} (${percentage}%)\n\n`;
 
-                // پیدا کردن سوالات اشتباه
+                // سوالات اشتباه
                 const wrongQuestions = [];
-                // برای این کار، باید پاسخ‌های دانشجو را داشته باشیم. فعلاً فقط سوالات را نمایش می‌دهیم.
-                // در نسخه بعدی، پاسخ‌های دانشجو هم ذخیره می‌شود.
+                // در حال حاضر فقط سوالات را نمایش می‌دهیم.
+                // برای پاسخ‌های دانشجو نیاز به ذخیره‌سازی جداگانه است.
 
                 if (wrongQuestions.length > 0) {
                     message += `❌ *Wrong Answers:*\n`;
@@ -517,7 +497,7 @@
             }
         }
 
-        // ---------- Create Exam (with JSON & Category) ----------
+        // ---------- Create Exam ----------
         function showCreateExam() {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
@@ -604,19 +584,22 @@
             }
         }
 
-        // ---------- Send Exam (با نمایش گروه و Unassign) ----------
+        // ---------- Send Exam (با انتخاب گروه) ----------
         async function showSendExam() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
             try {
-                const [examsData, assignmentsData] = await Promise.all([
+                const [examsData, assignmentsData, groupsData] = await Promise.all([
                     fetchAPI('/api/teacher/exams'),
-                    fetchAPI('/api/teacher/assignments')
+                    fetchAPI('/api/teacher/assignments'),
+                    fetchAPI('/api/teacher/groups')
                 ]);
 
-                if (examsData.status !== 'success' || assignmentsData.status !== 'success') {
+                if (examsData.status !== 'success' || assignmentsData.status !== 'success' || groupsData.status !== 'success') {
                     showError('Failed to load data.');
                     return;
                 }
+
+                allGroups = groupsData.groups || [];
 
                 const assignedMap = {};
                 assignmentsData.assignments.forEach(a => {
@@ -648,7 +631,7 @@
                                         ${isAssigned ? 
                                             `<button class="primary-button" style="padding: 4px 12px; margin-right: 4px;" onclick="sendExamByExamId(${e.id})">📤 Send</button>
                                              <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; padding: 4px 8px;" onclick="unassignExam(${e.id})" title="Unassign">🔓</button>` :
-                                            `<button class="primary-button" style="padding: 4px 12px; background: #2563eb;" onclick="assignAndSendExam(${e.id})">📌 Assign & Send</button>`
+                                            `<button class="primary-button" style="padding: 4px 12px; background: #2563eb;" onclick="showAssignForm(${e.id})">📌 Assign & Send</button>`
                                         }
                                     </div>
                                 </div>
@@ -661,6 +644,86 @@
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading data.');
+            }
+        }
+
+        // ---------- Show Assign Form (انتخاب گروه) ----------
+        function showAssignForm(examId) {
+            let optionsHtml = '';
+            allGroups.forEach(g => {
+                optionsHtml += `<option value="${g.id}">${g.name} (${g.telegram_group_id})</option>`;
+            });
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 20px;">
+                    <h2 style="color: #f9fafb;">📌 Assign Exam to Group</h2>
+                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="showSendExam()">← Back</button>
+                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
+                        <label style="color: #9ca3af;">Select Group:</label>
+                        <select id="assignGroupSelect" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
+                            ${optionsHtml}
+                        </select>
+                        <button class="primary-button" style="padding: 14px;" onclick="assignAndSendExamWithGroup(${examId})">Assign & Send</button>
+                    </div>
+                    <div id="assignStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                </div>
+            `;
+        }
+
+        // ---------- Assign and Send Exam with Selected Group ----------
+        async function assignAndSendExamWithGroup(examId) {
+            const groupSelect = document.getElementById('assignGroupSelect');
+            const groupId = parseInt(groupSelect.value);
+
+            if (!groupId) {
+                document.getElementById('assignStatus').textContent = '⚠️ Please select a group.';
+                return;
+            }
+
+            document.getElementById('assignStatus').textContent = 'Assigning exam to group...';
+
+            try {
+                const assignResponse = await fetch('/api/teacher/assign_exam', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        exam_id: examId,
+                        group_id: groupId
+                    })
+                });
+                const assignData = await assignResponse.json();
+
+                if (assignData.status !== 'success') {
+                    document.getElementById('assignStatus').textContent = '❌ ' + (assignData.message || 'Failed to assign exam.');
+                    return;
+                }
+
+                document.getElementById('assignStatus').textContent = '✅ Assigned! Sending exam...';
+
+                const sendResponse = await fetch('/api/teacher/send_exam_by_exam_id', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        exam_id: examId,
+                        group_id: groupId
+                    })
+                });
+                const sendData = await sendResponse.json();
+
+                if (sendData.status === 'success') {
+                    document.getElementById('assignStatus').textContent = '✅ Exam sent successfully!';
+                    setTimeout(() => showSendExam(), 2000);
+                } else {
+                    document.getElementById('assignStatus').textContent = '❌ ' + (sendData.message || 'Failed to send exam.');
+                }
+            } catch (error) {
+                document.getElementById('assignStatus').textContent = '❌ Error processing request.';
             }
         }
 
@@ -686,61 +749,6 @@
                 }
             } catch (error) {
                 alert('❌ Error unassigning exam.');
-            }
-        }
-
-        // ---------- Assign and Send Exam ----------
-        async function assignAndSendExam(examId) {
-            const groupId = 1;
-
-            const statusDiv = document.createElement('div');
-            statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af; text-align: center;';
-            document.querySelector('.exam-card > div').appendChild(statusDiv);
-            statusDiv.textContent = 'Assigning exam to group...';
-
-            try {
-                const assignResponse = await fetch('/api/teacher/assign_exam', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        exam_id: examId,
-                        group_id: groupId
-                    })
-                });
-                const assignData = await assignResponse.json();
-
-                if (assignData.status !== 'success') {
-                    statusDiv.textContent = '❌ ' + (assignData.message || 'Failed to assign exam.');
-                    return;
-                }
-
-                statusDiv.textContent = '✅ Assigned successfully! Sending exam...';
-
-                const sendResponse = await fetch('/api/teacher/send_exam_by_exam_id', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        exam_id: examId,
-                        group_id: groupId
-                    })
-                });
-                const sendData = await sendResponse.json();
-
-                if (sendData.status === 'success') {
-                    statusDiv.textContent = '✅ Exam sent successfully!';
-                } else {
-                    statusDiv.textContent = '❌ ' + (sendData.message || 'Failed to send exam.');
-                }
-
-                setTimeout(() => showSendExam(), 2000);
-            } catch (error) {
-                statusDiv.textContent = '❌ Error processing request.';
             }
         }
 
