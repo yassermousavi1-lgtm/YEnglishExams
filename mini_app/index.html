@@ -36,28 +36,42 @@
         const appRoot = document.getElementById('appRoot');
 
         // ============================================================
+        // STATE
+        // ============================================================
+
+        let USER_DATA = null;
+        let exam = null;
+        let questions = [];
+        let currentQuestionIndex = 0;
+        let studentAnswers = {};
+        let remainingSeconds = 0;
+        let timerInterval = null;
+        let startedAt = null;
+        let isSubmitting = false;
+
+        // ============================================================
         // API HELPERS
         // ============================================================
-		async function fetchAPI(endpoint, options = {}) {
-    try {
-        const response = await fetch(endpoint, {
-            ...options,
-            headers: {
-                ...options.headers,
-                'X-Telegram-Init-Data': telegram?.initData || ''
+
+        async function fetchAPI(endpoint, options = {}) {
+            try {
+                const response = await fetch(endpoint, {
+                    ...options,
+                    headers: {
+                        ...options.headers,
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    }
+                });
+                const data = await response.json();
+                if (data.status !== 'success') {
+                    showError('API Error: ' + (data.message || 'Unknown error'));
+                }
+                return data;
+            } catch (error) {
+                showError('Network Error: ' + error.message);
+                throw error;
             }
-        });
-        const data = await response.json();
-        if (data.status !== 'success') {
-            showError('API Error: ' + (data.message || 'Unknown error'));
         }
-        return data;
-    } catch (error) {
-        showError('Network Error: ' + error.message);
-        throw error;
-    }
-}
-       
 
         // ============================================================
         // RENDER FUNCTIONS
@@ -102,14 +116,14 @@
                 if (data.students.length === 0) {
                     html += `<p style="color: #9ca3af;">No students registered yet.</p>`;
                 } else {
-		data.students.forEach(s => {
-   		 html += `
-      		  <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
-          		  <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
-           		 <span style="color: #9ca3af; font-size: 14px; display: block;">Telegram ID: ${s.telegram_user_id} | Group: ${s.group_name}</span>
-      		  </div>
-  		  `;
-		});
+                    data.students.forEach(s => {
+                        html += `
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                                <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
+                                <span style="color: #9ca3af; font-size: 14px; display: block;">Telegram ID: ${s.telegram_user_id} | Group: ${s.group_name}</span>
+                            </div>
+                        `;
+                    });
                 }
                 html += `</div></div>`;
                 appRoot.innerHTML = html;
@@ -136,14 +150,14 @@
                 if (data.exams.length === 0) {
                     html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
                 } else {
-		data.exams.forEach(e => {
-   		 html += `
-    		    <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
-      		      <strong style="color: #f9fafb;">${e.title}</strong>
-      		      <span style="color: #9ca3af; font-size: 14px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-   		     </div>
-  		  `;
-		});
+                    data.exams.forEach(e => {
+                        html += `
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                                <strong style="color: #f9fafb;">${e.title}</strong>
+                                <span style="color: #9ca3af; font-size: 14px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                            </div>
+                        `;
+                    });
                 }
                 html += `</div></div>`;
                 appRoot.innerHTML = html;
@@ -486,31 +500,292 @@
             `;
         }
 
-        // ---------- Student Exam (placeholder) ----------
+        // ---------- Student Exam Loading ----------
         function renderStudentExam() {
-    appRoot.innerHTML = `
-        <div style="text-align: center; padding: 40px 20px;">
-            <div style="font-size: 48px; margin-bottom: 10px;">📚</div>
-            <h1 style="color: #f9fafb;">Loading Exam...</h1>
-            <p style="color: #9ca3af;">Please wait while we prepare your exam.</p>
-            <div id="examError" style="margin-top: 20px; color: #fca5a5; font-weight: bold;"></div>
-            <div style="margin-top: 20px; display: flex; justify-content: center;">
-                <div style="width: 40px; height: 40px; border: 4px solid #374151; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            </div>
-            <style>
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
+            appRoot.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📚</div>
+                    <h1 style="color: #f9fafb;">Loading Exam...</h1>
+                    <p style="color: #9ca3af;">Please wait while we prepare your exam.</p>
+                    <div id="examError" style="margin-top: 20px; color: #fca5a5; font-weight: bold;"></div>
+                    <div style="margin-top: 20px; display: flex; justify-content: center;">
+                        <div style="width: 40px; height: 40px; border: 4px solid #374151; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    </div>
+                    <style>
+                        @keyframes spin {
+                            to { transform: rotate(360deg); }
+                        }
+                    </style>
+                </div>
+            `;
+        }
+
+        // ---------- Load Exam (واقعی) ----------
+        async function loadExam(examId) {
+            try {
+                // نمایش صفحه Loading
+                renderStudentExam();
+
+                // دریافت اطلاعات آزمون از سرور
+                const response = await fetch(`/api/exam/${examId}/questions`, {
+                    method: 'GET',
+                    headers: {
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    }
+                });
+
+                if (!response.ok) {
+                    let message = `HTTP Error ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.message) message = errorData.message;
+                    } catch (e) {}
+                    showError('Server Error: ' + message);
+                    return;
                 }
-            </style>
-        </div>
-    `;
-}
 
-        // ============================================================
-        // GLOBAL USER DATA
-        // ============================================================
+                const data = await response.json();
 
-        let USER_DATA = null;
+                if (data.status !== 'success') {
+                    showError('API Error: ' + (data.message || 'Unknown error'));
+                    return;
+                }
+
+                if (!data.exam) {
+                    showError('Exam data is missing in response.');
+                    return;
+                }
+
+                // ذخیره اطلاعات آزمون
+                exam = data.exam;
+                questions = data.questions || [];
+
+                if (questions.length === 0) {
+                    showError('This exam has no questions.');
+                    return;
+                }
+
+                // شروع آزمون
+                startedAt = new Date().toISOString();
+                document.getElementById('examTitle').textContent = exam.title;
+                remainingSeconds = Number(exam.time_limit) * 60;
+                startTimer();
+                currentQuestionIndex = 0;
+                renderCurrentQuestion();
+                document.getElementById('status').textContent = '';
+
+            } catch (error) {
+                showError('Unexpected Error: ' + error.message);
+            }
+        }
+
+        // ---------- Render Current Question ----------
+        function renderCurrentQuestion() {
+            if (!questions.length) return;
+
+            const question = questions[currentQuestionIndex];
+            const questionNumber = currentQuestionIndex + 1;
+            const totalQuestions = questions.length;
+
+            // به‌روزرسانی هدر
+            document.getElementById('questionProgress').textContent = `Question ${questionNumber} of ${totalQuestions}`;
+            document.getElementById('progressFill').style.width = `${(questionNumber / totalQuestions) * 100}%`;
+
+            const container = document.getElementById('questionContainer');
+            container.innerHTML = '';
+
+            // شماره سوال
+            const numberEl = document.createElement('div');
+            numberEl.className = 'question-number';
+            numberEl.textContent = `Question ${questionNumber}`;
+            container.appendChild(numberEl);
+
+            // متن سوال
+            const textEl = document.createElement('h2');
+            textEl.className = 'question-text';
+            textEl.textContent = question.question_text;
+            container.appendChild(textEl);
+
+            // گزینه‌ها
+            const optionsContainer = document.createElement('div');
+            optionsContainer.className = 'options-container';
+
+            const optionKeys = ['A', 'B', 'C', 'D'];
+            optionKeys.forEach(key => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'option-button';
+                btn.dataset.option = key;
+
+                const letter = document.createElement('span');
+                letter.className = 'option-letter';
+                letter.textContent = key;
+
+                const text = document.createElement('span');
+                text.className = 'option-text';
+                text.textContent = question.options[key];
+
+                btn.appendChild(letter);
+                btn.appendChild(text);
+
+                if (studentAnswers[question.id] === key) {
+                    btn.classList.add('selected');
+                }
+
+                btn.addEventListener('click', () => selectAnswer(question.id, key));
+                optionsContainer.appendChild(btn);
+            });
+
+            container.appendChild(optionsContainer);
+            updateNavigationButtons();
+        }
+
+        // ---------- Select Answer ----------
+        function selectAnswer(questionId, optionKey) {
+            studentAnswers[questionId] = optionKey;
+            renderCurrentQuestion();
+        }
+
+        // ---------- Navigation ----------
+        function updateNavigationButtons() {
+            const prev = document.getElementById('previousButton');
+            const next = document.getElementById('nextButton');
+
+            prev.disabled = currentQuestionIndex === 0 || isSubmitting;
+
+            if (currentQuestionIndex === questions.length - 1) {
+                next.textContent = 'Submit Exam';
+            } else {
+                next.textContent = 'Next →';
+            }
+            next.disabled = isSubmitting;
+        }
+
+        // ---------- Timer ----------
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            updateTimerDisplay();
+
+            timerInterval = setInterval(() => {
+                remainingSeconds--;
+                updateTimerDisplay();
+
+                if (remainingSeconds <= 0) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                    document.getElementById('timer').textContent = '00:00';
+                    isSubmitting = true;
+                    updateNavigationButtons();
+                    document.getElementById('status').textContent = 'Time is up.';
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            document.getElementById('timer').textContent =
+                `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+            if (remainingSeconds <= 60) {
+                document.getElementById('timer').classList.add('timer-warning');
+            } else {
+                document.getElementById('timer').classList.remove('timer-warning');
+            }
+        }
+
+        // ---------- Submit Exam ----------
+        async function submitExam() {
+            if (isSubmitting) return;
+
+            const confirmed = confirm('Are you sure you want to submit the exam?');
+            if (!confirmed) return;
+
+            isSubmitting = true;
+            updateNavigationButtons();
+            document.getElementById('status').textContent = 'Submitting exam...';
+
+            try {
+                const payload = {
+                    exam_id: Number(examId),
+                    answers: studentAnswers,
+                    started_at: startedAt
+                };
+
+                const response = await fetch('/api/exam/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    let message = `Submission failed (HTTP ${response.status})`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.message) message = errorData.message;
+                    } catch (e) {}
+                    throw new Error(message);
+                }
+
+                const data = await response.json();
+                if (data.status !== 'success') {
+                    throw new Error(data.message || 'Submission failed.');
+                }
+
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+
+                showResult(data.result);
+
+            } catch (error) {
+                isSubmitting = false;
+                updateNavigationButtons();
+                document.getElementById('status').textContent = error.message || 'Could not submit the exam.';
+            }
+        }
+
+        // ---------- Show Result ----------
+        function showResult(result) {
+            const score = result.score;
+            const total = result.total_questions;
+            const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+
+            document.getElementById('examTitle').textContent = 'Exam Completed';
+            document.getElementById('questionProgress').textContent = 'Result';
+            document.getElementById('progressFill').style.width = '100%';
+
+            const container = document.getElementById('questionContainer');
+            container.innerHTML = '';
+
+            const box = document.createElement('div');
+            box.className = 'result-box';
+
+            const title = document.createElement('h2');
+            title.textContent = 'Your Result';
+
+            const scoreEl = document.createElement('div');
+            scoreEl.className = 'result-score';
+            scoreEl.textContent = `${score} / ${total}`;
+
+            const percentEl = document.createElement('div');
+            percentEl.className = 'result-percentage';
+            percentEl.textContent = `${percentage}%`;
+
+            box.appendChild(title);
+            box.appendChild(scoreEl);
+            box.appendChild(percentEl);
+            container.appendChild(box);
+
+            document.getElementById('previousButton').style.display = 'none';
+            document.getElementById('nextButton').style.display = 'none';
+            document.getElementById('timer').textContent = 'DONE';
+            document.getElementById('status').textContent = 'Your exam has been submitted successfully.';
+        }
 
         // ============================================================
         // MAIN APPLICATION
@@ -524,28 +799,56 @@
                     return;
                 }
                 USER_DATA = userData;
+
                 if (userData.is_teacher) {
                     renderDashboard(userData);
                 } else {
-                    renderStudentExam();
+                    // دانشجو: دریافت examId از start_param
                     const startParam = telegram?.initDataUnsafe?.start_param || null;
                     let examId = null;
                     if (startParam && startParam.startsWith('exam_')) {
                         examId = startParam.substring(5);
                     }
+
                     if (!examId) {
                         showError('Exam ID was not received from Telegram.');
                         return;
                     }
-                    setTimeout(() => {
-                        renderStudentExam();
-                    }, 500);
+
+                    // بارگذاری آزمون
+                    await loadExam(examId);
                 }
             } catch (error) {
                 console.error('App error:', error);
                 showError('Unable to start the application.');
             }
         }
+
+        // ============================================================
+        // EVENT LISTENERS (برای دکمه‌های ناوبری)
+        // ============================================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('previousButton')?.addEventListener('click', () => {
+                if (currentQuestionIndex > 0 && !isSubmitting) {
+                    currentQuestionIndex--;
+                    renderCurrentQuestion();
+                }
+            });
+
+            document.getElementById('nextButton')?.addEventListener('click', async () => {
+                if (isSubmitting) return;
+
+                if (currentQuestionIndex < questions.length - 1) {
+                    currentQuestionIndex++;
+                    renderCurrentQuestion();
+                    return;
+                }
+
+                // آخرین سوال → ارسال
+                await submitExam();
+            });
+        });
 
         // ============================================================
         // START
