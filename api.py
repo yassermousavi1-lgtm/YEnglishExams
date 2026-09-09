@@ -7,7 +7,7 @@ import hmac
 import hashlib
 import requests
 from urllib.parse import parse_qsl
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 
 app = Flask(
@@ -124,7 +124,7 @@ def send_result_to_teacher(student, exam, score, total_questions, completed_at):
         f"<b>Exam:</b> {exam['title']}\n"
         f"<b>Score:</b> {score}/{total_questions}\n"
         f"<b>Percentage:</b> {percentage}%\n"
-        f"<b>Completed:</b> {completed_at}"
+       f"<b>Completed:</b> {datetime.fromisoformat(completed_at).astimezone(timezone(timedelta(hours=3, minutes=30))).strftime('%Y-%m-%d %H:%M:%S') if completed_at else 'N/A'}"
     )
     telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TEACHER_TELEGRAM_ID, "text": message, "parse_mode": "HTML"}
@@ -654,7 +654,9 @@ def teacher_get_results():
                 "student_username": r["username"], "telegram_user_id": r["telegram_user_id"],
                 "exam_title": r["exam_title"], "exam_id": r["exam_id"], "score": r["score"],
                 "total_questions": r["total_questions"], "percentage": percentage,
-                "group_name": r["group_name"], "started_at": r["started_at"], "completed_at": r["completed_at"]
+                "group_name": r["group_name"], "started_at": r["started_at"], 
+		"completed_at": datetime.fromisoformat(r["completed_at"]).astimezone(timezone(timedelta(hours=3, minutes=30))).strftime("%Y-%m-%d %H:%M:%S") if r["completed_at"] else None
+
             })
         return jsonify({"status": "success", "results": result_list, "total": len(result_list)})
     finally:
@@ -926,7 +928,7 @@ def teacher_result_details(result_id):
                 "exam_title": result["exam_title"],
                 "score": result["score"],
                 "total_questions": result["total_questions"],
-                "completed_at": result["completed_at"],
+                "completed_at": datetime.fromisoformat(result["completed_at"]).astimezone(timezone(timedelta(hours=3, minutes=30))).strftime("%Y-%m-%d %H:%M:%S") if result["completed_at"] else None,
                 "wrong_answers": wrong_list
             }
         })
