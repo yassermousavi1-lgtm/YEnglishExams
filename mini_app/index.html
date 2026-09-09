@@ -38,17 +38,26 @@
         // ============================================================
         // API HELPERS
         // ============================================================
-
-        async function fetchAPI(endpoint, options = {}) {
-            const response = await fetch(endpoint, {
-                ...options,
-                headers: {
-                    ...options.headers,
-                    'X-Telegram-Init-Data': telegram?.initData || ''
-                }
-            });
-            return response.json();
+		async function fetchAPI(endpoint, options = {}) {
+    try {
+        const response = await fetch(endpoint, {
+            ...options,
+            headers: {
+                ...options.headers,
+                'X-Telegram-Init-Data': telegram?.initData || ''
+            }
+        });
+        const data = await response.json();
+        if (data.status !== 'success') {
+            showError('API Error: ' + (data.message || 'Unknown error'));
         }
+        return data;
+    } catch (error) {
+        showError('Network Error: ' + error.message);
+        throw error;
+    }
+}
+       
 
         // ============================================================
         // RENDER FUNCTIONS
@@ -479,22 +488,23 @@
 
         // ---------- Student Exam (placeholder) ----------
         function renderStudentExam() {
-            appRoot.innerHTML = `
-                <div style="text-align: center; padding: 40px 20px;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">📚</div>
-                    <h1 style="color: #f9fafb;">Loading Exam...</h1>
-                    <p style="color: #9ca3af;">Please wait while we prepare your exam.</p>
-                    <div style="margin-top: 20px; display: flex; justify-content: center;">
-                        <div style="width: 40px; height: 40px; border: 4px solid #374151; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                    </div>
-                    <style>
-                        @keyframes spin {
-                            to { transform: rotate(360deg); }
-                        }
-                    </style>
-                </div>
-            `;
-        }
+    appRoot.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px;">
+            <div style="font-size: 48px; margin-bottom: 10px;">📚</div>
+            <h1 style="color: #f9fafb;">Loading Exam...</h1>
+            <p style="color: #9ca3af;">Please wait while we prepare your exam.</p>
+            <div id="examError" style="margin-top: 20px; color: #fca5a5; font-weight: bold;"></div>
+            <div style="margin-top: 20px; display: flex; justify-content: center;">
+                <div style="width: 40px; height: 40px; border: 4px solid #374151; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            </div>
+            <style>
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+            </style>
+        </div>
+    `;
+}
 
         // ============================================================
         // GLOBAL USER DATA
