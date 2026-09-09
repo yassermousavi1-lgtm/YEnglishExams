@@ -328,59 +328,130 @@
             }
         }
 
-        // ---------- Send Exam ----------
+        // ---------- Send Exam (with Assign & Send) ----------
         async function showSendExam() {
             appRoot.innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
             try {
-                const data = await fetchAPI('/api/teacher/assignments');
-                if (data.status !== 'success') {
-                    showError(data.message || 'Failed to load assignments.');
+                const [examsData, assignmentsData] = await Promise.all([
+                    fetchAPI('/api/teacher/exams'),
+                    fetchAPI('/api/teacher/assignments')
+                ]);
+
+                if (examsData.status !== 'success' || assignmentsData.status !== 'success') {
+                    showError('Failed to load data.');
                     return;
                 }
+
+                const assignedExamIds = assignmentsData.assignments.map(a => a.exam_id);
+
                 let html = `
                     <div style="padding: 16px;">
                         <h2 style="color: #f9fafb;">📤 Send Exam</h2>
                         <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
                         <div style="margin-top: 12px;">
                 `;
-                if (data.assignments.length === 0) {
-                    html += `<p style="color: #9ca3af;">No assignments found. Please assign an exam to a group first.</p>`;
+
+                if (examsData.exams.length === 0) {
+                    html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
                 } else {
-                    data.assignments.forEach(a => {
+                    examsData.exams.forEach(e => {
+                        const isAssigned = assignedExamIds.includes(e.id);
                         html += `
                             <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center;">
                                 <div>
-                                    <strong style="color: #f9fafb;">${a.exam_title}</strong>
-                                    <span style="color: #9ca3af; font-size: 14px; display: block;">Group: ${a.group_name}</span>
+                                    <strong style="color: #f9fafb;">${e.title}</strong>
+                                    <span style="color: #9ca3af; font-size: 14px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
                                 </div>
-                                <button class="primary-button" style="padding: 8px 16px;" onclick="sendExam(${a.assignment_id})">📤 Send</button>
+                                <div>
+                                    ${isAssigned ? 
+                                        `<button class="primary-button" style="padding: 8px 16px;" onclick="sendExamByExamId(${e.id})">📤 Send</button>` :
+                                        `<button class="primary-button" style="padding: 8px 16px; background: #2563eb;" onclick="assignAndSendExam(${e.id})">📌 Assign & Send</button>`
+                                    }
+                                </div>
                             </div>
                         `;
                     });
                 }
+
                 html += `</div></div>`;
                 appRoot.innerHTML = html;
             } catch (error) {
-                showError('Error loading assignments.');
+                showError('Error loading data.');
             }
         }
 
-        // ---------- Send Exam API ----------
-        async function sendExam(assignmentId) {
+        // ---------- Assign and Send Exam ----------
+        async function assignAndSendExam(examId) {
+            const groupId = 1;
+
             const statusDiv = document.createElement('div');
-            statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af;';
+            statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af; text-align: center;';
             document.querySelector('#appRoot > div').appendChild(statusDiv);
-            statusDiv.textContent = 'Sending exam...';
+            statusDiv.textContent = 'Assigning exam to group...';
 
             try {
-                const response = await fetch('/api/teacher/send_exam', {
+                const assignResponse = await fetch('/api/teacher/assign_exam', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-Telegram-Init-Data': telegram?.initData || ''
                     },
                     body: JSON.stringify({
-                        assignment_id: assignmentId
+                        exam_id: examId,
+                        group_id: groupId
+                    })
+                });
+                const assignData = await assignResponse.json();
+
+                if (assignData.status !== 'success') {
+                    statusDiv.textContent = '❌ ' + (assignData.message || 'Failed to assign exam.');
+                    return;
+                }
+
+                statusDiv.textContent = '✅ Assigned successfully! Sending exam...';
+
+                const sendResponse = await fetch('/api/teacher/send_exam_by_exam_id', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        exam_id: examId,
+                        group_id: groupId
+                    })
+                });
+                const sendData = await sendResponse.json();
+
+                if (sendData.status === 'success') {
+                    statusDiv.textContent = '✅ Exam sent successfully!';
+                } else {
+                    statusDiv.textContent = '❌ ' + (sendData.message || 'Failed to send exam.');
+                }
+
+                setTimeout(() => showSendExam(), 2000);
+            } catch (error) {
+                statusDiv.textContent = '❌ Error processing request.';
+            }
+        }
+
+        // ---------- Send Exam by Exam ID (already assigned) ----------
+        async function sendExamByExamId(examId) {
+            const statusDiv = document.createElement('div');
+            statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af; text-align: center;';
+            document.querySelector('#appRoot > div').appendChild(statusDiv);
+            statusDiv.textContent = 'Sending exam...';
+
+            try {
+                const response = await fetch('/api/teacher/send_exam_by_exam_id', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        exam_id: examId,
+                        group_id: 1
                     })
                 });
                 const data = await response.json();

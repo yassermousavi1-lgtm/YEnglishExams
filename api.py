@@ -2068,3 +2068,131 @@ def teacher_create_exam_with_questions():
 
     finally:
         connection.close()
+
+# ============================================================
+# TEACHER: ASSIGN EXAM TO GROUP
+# ============================================================
+
+@app.route("/api/teacher/assign_exam", methods=["POST"])
+def teacher_assign_exam():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+
+    exam_id = data.get("exam_id")
+    group_id = data.get("group_id")
+
+    if not exam_id or not group_id:
+        return jsonify({"status": "error", "message": "exam_id and group_id required."}), 400
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute(
+            "INSERT INTO exam_assignments (exam_id, group_id) VALUES (?, ?)",
+            (exam_id, group_id)
+        )
+        connection.commit()
+        return jsonify({"status": "success", "message": "Exam assigned successfully."})
+    except sqlite3.IntegrityError:
+        return jsonify({"status": "error", "message": "Exam already assigned to this group."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+# ============================================================
+# TEACHER: SEND EXAM TO GROUP BY EXAM ID
+# ============================================================
+
+@app.route("/api/teacher/send_exam_by_exam_id", methods=["POST"])
+def teacher_send_exam_by_exam_id():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+
+    exam_id = data.get("exam_id")
+    group_id = data.get("group_id")
+
+    if not exam_id or not group_id:
+        return jsonify({"status": "error", "message": "exam_id and group_id required."}), 400
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    try:
+        # بررسی اینکه انتساب وجود دارد
+        assignment = cursor.execute(
+            "SELECT id FROM exam_assignments WHERE exam_id = ? AND group_id = ?",
+            (exam_id, group_id)
+        ).fetchone()
+
+        if not assignment:
+            return jsonify({"status": "error", "message": "Exam is not assigned to this group."}), 400
+
+        # دریافت اطلاعات آزمون و گروه
+        exam = cursor.execute("SELECT id, title, time_limit FROM exams WHERE id = ?", (exam_id,)).fetchone()
+        group = cursor.execute("SELECT telegram_group_id, name FROM groups WHERE id = ?", (group_id,)).fetchone()
+
+        if not exam or not group:
+            return jsonify({"status": "error", "message": "Exam or group not found."}), 404
+
+        # دریافت تعداد سوالات
+        question_count = cursor.execute(
+            "SELECT COUNT(*) FROM exam_questions WHERE exam_id = ?",
+            (exam_id,)
+        ).fetchone()[0]
+
+        # ساخت لینک عمیق
+        bot_username = "YEnglsihExamsbot"
+        deep_link = f"https://t.me/{bot_username}?startapp=exam_{exam_id}"
+
+        # ارسال پیام به تلگرام
+        import asyncio
+        from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+
+        message = (
+            f"📝 EXAM\n\n"
+            f"Title: {exam['title']}\n"
+            f"Questions: {question_count}\n"
+            f"Time Limit: {exam['time_limit']} minutes\n\n"
+            "When you are ready, press the button below to start the exam."
+        )
+
+        keyboard = [[InlineKeyboardButton("📝 Start Exam", url=deep_link)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        asyncio.run(bot.send_message(
+            chat_id=group["telegram_group_id"],
+            text=message,
+            reply_markup=reply_markup
+        ))
+
+        return jsonify({"status": "success", "message": "Exam sent successfully."})
+
+    except Exception as error:
+        print("SEND EXAM ERROR:", error)
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
