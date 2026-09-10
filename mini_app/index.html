@@ -982,6 +982,7 @@
         }
 
         // ---------- Render Current Question ----------
+	        // ---------- Render Current Question ----------
         function renderCurrentQuestion() {
             if (!questions.length) return;
 
@@ -1019,7 +1020,11 @@
             const optionsContainer = document.createElement('div');
             optionsContainer.className = 'options-container';
 
-            const optionKeys = ['A', 'B', 'C', 'D'];
+            // فقط گزینه‌هایی که مقدار دارند را نمایش بده
+            const optionKeys = ['A', 'B', 'C', 'D'].filter(key => {
+                return question.options[key] && question.options[key].trim() !== '';
+            });
+
             optionKeys.forEach(key => {
                 const btn = document.createElement('button');
                 btn.type = 'button';
