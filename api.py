@@ -34,6 +34,11 @@ def get_database_connection():
         connection.commit()
     except:
         pass
+    try:
+        connection.execute("ALTER TABLE results ADD COLUMN is_archived BOOLEAN DEFAULT 0")
+        connection.commit()
+    except:
+        pass
     return connection
 
 
@@ -264,7 +269,6 @@ def get_exam_questions(exam_id):
 
 @app.route("/api/exam/submit", methods=["POST"])
 def submit_exam():
-    print("=== SUBMIT EXAM STARTED ===")
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
         return jsonify({"status": "error", "message": auth_result["message"]}), 401
@@ -279,7 +283,6 @@ def submit_exam():
         return jsonify({"status": "error", "message": "exam_id is required."}), 400
     if not isinstance(answers, dict):
         return jsonify({"status": "error", "message": "answers must be an object."}), 400
-
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
@@ -319,8 +322,8 @@ def submit_exam():
         if not started_at:
             started_at = completed_at
         cursor.execute("""
-            INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived)
+            VALUES (?, ?, ?, ?, ?, ?, 0)
         """, (student["id"], exam_id, score, total_questions, started_at, completed_at))
         result_id = cursor.lastrowid
         for question in questions:
@@ -448,6 +451,56 @@ def teacher_delete_student():
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/student/<int:student_id>")
+def teacher_get_student_profile(student_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT s.id, s.telegram_user_id, s.first_name, s.last_name, s.username, s.group_id, g.name AS group_name, g.telegram_group_id
+            FROM students s JOIN groups g ON g.id = s.group_id WHERE s.id = ?
+        """, (student_id,))
+        student = cursor.fetchone()
+        if not student:
+            return jsonify({"status": "error", "message": "Student not found."}), 404
+        cursor.execute("""
+            SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
+                   e.title AS exam_title, e.id AS exam_id
+            FROM results r
+            JOIN exams e ON e.id = r.exam_id
+            WHERE r.student_id = ? AND r.is_archived = 1
+            ORDER BY r.completed_at DESC
+        """, (student_id,))
+        results = cursor.fetchall()
+        result_list = []
+        for r in results:
+            percentage = round((r["score"] / r["total_questions"]) * 100) if r["total_questions"] > 0 else 0
+            result_list.append({
+                "id": r["id"], "exam_title": r["exam_title"], "exam_id": r["exam_id"],
+                "score": r["score"], "total_questions": r["total_questions"],
+                "percentage": percentage, "completed_at": r["completed_at"]
+            })
+        return jsonify({
+            "status": "success",
+            "student": {
+                "id": student["id"], "telegram_user_id": student["telegram_user_id"],
+                "first_name": student["first_name"], "last_name": student["last_name"],
+                "username": student["username"], "group_id": student["group_id"],
+                "group_name": student["group_name"], "telegram_group_id": student["telegram_group_id"]
+            },
+            "results": result_list,
+            "total": len(result_list)
+        })
     finally:
         connection.close()
 
@@ -639,13 +692,14 @@ def teacher_get_results():
     try:
         cursor = connection.cursor()
         cursor.execute("""
-            SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at,
+            SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
                    s.first_name, s.last_name, s.username, s.telegram_user_id,
                    e.title AS exam_title, e.id AS exam_id, g.name AS group_name
             FROM results r
             JOIN students s ON s.id = r.student_id
             JOIN exams e ON e.id = r.exam_id
             JOIN groups g ON g.id = s.group_id
+            WHERE r.is_archived = 0
             ORDER BY r.completed_at DESC
         """)
         results = cursor.fetchall()
@@ -694,6 +748,64 @@ def teacher_delete_result():
         connection.close()
 
 
+@app.route("/api/teacher/archive_result", methods=["POST"])
+def teacher_archive_result():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    result_id = data.get("result_id")
+    if not result_id:
+        return jsonify({"status": "error", "message": "result_id is required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("UPDATE results SET is_archived = 1 WHERE id = ?", (result_id,))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Result not found."}), 404
+        return jsonify({"status": "success", "message": "Result archived successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/unarchive_result", methods=["POST"])
+def teacher_unarchive_result():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    result_id = data.get("result_id")
+    if not result_id:
+        return jsonify({"status": "error", "message": "result_id is required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("UPDATE results SET is_archived = 0 WHERE id = ?", (result_id,))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Result not found."}), 404
+        return jsonify({"status": "success", "message": "Result unarchived successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
 @app.route("/api/teacher/exams_with_questions", methods=["POST"])
 def teacher_create_exam_with_questions():
     auth_result = get_authenticated_user()
@@ -724,12 +836,8 @@ def teacher_create_exam_with_questions():
             option_c = q.get("option_c", "").strip()
             option_d = q.get("option_d", "").strip()
             correct_answer = q.get("correct_answer", "").strip().upper()
-            
-            # بررسی: فقط question_text و correct_answer اجباری هستند
             if not question_text or not correct_answer or correct_answer not in ["A", "B", "C", "D"]:
                 raise ValueError(f"Invalid question data: {question_text[:50]}...")
-            
-            # بررسی اینکه گزینه مربوط به correct_answer خالی نباشد
             if correct_answer == "A" and not option_a:
                 raise ValueError("Correct answer is A but option_a is empty.")
             if correct_answer == "B" and not option_b:
@@ -738,7 +846,6 @@ def teacher_create_exam_with_questions():
                 raise ValueError("Correct answer is C but option_c is empty.")
             if correct_answer == "D" and not option_d:
                 raise ValueError("Correct answer is D but option_d is empty.")
-            
             cursor.execute("INSERT INTO questions (question_text, option_a, option_b, option_c, option_d, correct_answer) VALUES (?, ?, ?, ?, ?, ?)", (question_text, option_a, option_b, option_c, option_d, correct_answer))
             question_id = cursor.lastrowid
             question_ids.append(question_id)
@@ -813,10 +920,8 @@ def teacher_unassign_exam():
     cursor = connection.cursor()
     try:
         cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
-        cursor.execute("DELETE FROM student_answers WHERE result_id IN (SELECT id FROM results WHERE exam_id = ?)", (exam_id,))
-        cursor.execute("DELETE FROM results WHERE exam_id = ?", (exam_id,))
         connection.commit()
-        return jsonify({"status": "success", "message": "Exam unassigned and results cleared."})
+        return jsonify({"status": "success", "message": "Exam unassigned successfully. Results are preserved."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -852,12 +957,10 @@ def teacher_send_exam_by_exam_id():
         deep_link = f"https://t.me/{bot_username}?startapp=exam_{exam_id}"
         import asyncio
         from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
-        
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         message = (f"📝 EXAM\n\nTitle: {exam['title']}\nQuestions: {question_count}\nTime Limit: {exam['time_limit']} minutes\n\nWhen you are ready, press the button below to start the exam.")
         keyboard = [[InlineKeyboardButton("📝 Start Exam", url=deep_link)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
         sent_count = 0
         for group_id in group_ids:
             try:

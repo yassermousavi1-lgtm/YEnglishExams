@@ -149,7 +149,7 @@
             `;
         }
 
-        // ---------- Students List (با Group ID و Telegram ID و دکمه حذف) ----------
+        // ---------- Students List (با کلیک روی دانشجو) ----------
         async function loadStudents() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading students...</p></div>`;
             try {
@@ -169,16 +169,14 @@
                 } else {
                     data.students.forEach(s => {
                         html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
-                                        <span style="color: #9ca3af; font-size: 14px; display: block;">📱 Telegram ID: ${s.telegram_user_id}</span>
-                                        <span style="color: #60a5fa; font-size: 14px; display: block;">📚 Group ID: ${s.group_id} | ${s.group_name}</span>
-                                    </div>
-                                    <div>
-                                        <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="deleteStudent(${s.id})" title="Delete Student">✕</button>
-                                    </div>
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="showStudentProfile(${s.id})">
+                                <div>
+                                    <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
+                                    <span style="color: #9ca3af; font-size: 14px; display: block;">📱 Telegram ID: ${s.telegram_user_id}</span>
+                                    <span style="color: #60a5fa; font-size: 14px; display: block;">📚 Group ID: ${s.group_id} | ${s.group_name}</span>
+                                </div>
+                                <div>
+                                    <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="event.stopPropagation(); deleteStudent(${s.id})" title="Delete Student">✕</button>
                                 </div>
                             </div>
                         `;
@@ -188,6 +186,61 @@
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading students.');
+            }
+        }
+
+        // ---------- Show Student Profile ----------
+        async function showStudentProfile(studentId) {
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading profile...</p></div>`;
+            try {
+                const data = await fetchAPI(`/api/teacher/student/${studentId}`);
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load student profile.');
+                    return;
+                }
+
+                const s = data.student;
+                let html = `
+                    <div style="padding: 16px;">
+                        <button class="secondary-button" style="margin: 0 0 12px 0; padding: 8px 16px;" onclick="loadStudents()">← Back</button>
+                        
+                        <div style="background: #111827; padding: 16px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 16px;">
+                            <div style="font-size: 48px; text-align: center; margin-bottom: 8px;">👤</div>
+                            <h2 style="color: #f9fafb; text-align: center; margin: 8px 0;">${s.first_name} ${s.last_name || ''}</h2>
+                            <p style="color: #9ca3af; text-align: center; font-size: 14px;">📱 Telegram ID: ${s.telegram_user_id}</p>
+                            <p style="color: #60a5fa; text-align: center; font-size: 14px;">📚 Group ID: ${s.group_id} | ${s.group_name}</p>
+                        </div>
+                        
+                        <h3 style="color: #f9fafb; margin-bottom: 12px;">📊 Archived Results (${data.total})</h3>
+                `;
+
+                if (data.results.length === 0) {
+                    html += `<p style="color: #9ca3af; text-align: center; padding: 20px;">No archived results yet.</p>`;
+                } else {
+                    data.results.forEach(r => {
+                        const date = r.completed_at ? r.completed_at : 'N/A';
+                        html += `
+                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: #f9fafb;">${r.exam_title}</strong>
+                                        <span style="color: #34d399; font-weight: 600; display: block;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
+                                        <span style="color: #9ca3af; font-size: 12px; display: block;">📅 ${date}</span>
+                                    </div>
+                                    <div>
+                                        <button style="background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="shareResult(${r.id})" title="Share Result">📤</button>
+                                        <button style="background: none; border: none; color: #fbbf24; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="unarchiveResult(${r.id}, ${studentId})" title="Unarchive">↩️</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                html += `</div>`;
+                document.querySelector('.exam-card').innerHTML = html;
+            } catch (error) {
+                showError('Error loading student profile.');
             }
         }
 
@@ -359,7 +412,7 @@
             }
         }
 
-        // ---------- Results List ----------
+        // ---------- Results List (با دکمه Archive) ----------
         async function loadResults() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
             try {
@@ -378,7 +431,7 @@
                     html += `<p style="color: #9ca3af;">No results yet.</p>`;
                 } else {
                     data.results.forEach(r => {
-                        const date = r.completed_at ? new Date(r.completed_at).toLocaleString() : 'N/A';
+                        const date = r.completed_at ? r.completed_at : 'N/A';
                         html += `
                             <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -390,6 +443,7 @@
                                     </div>
                                     <div>
                                         <button style="background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="shareResult(${r.id})" title="Share Result">📤</button>
+                                        <button style="background: none; border: none; color: #fbbf24; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="archiveResult(${r.id})" title="Archive">📦</button>
                                         <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="deleteResult(${r.id})" title="Delete Result">✕</button>
                                     </div>
                                 </div>
@@ -401,6 +455,56 @@
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading results.');
+            }
+        }
+
+        // ---------- Archive Result ----------
+        async function archiveResult(resultId) {
+            if (!confirm(`Archive this result? It will be moved to the student's profile.`)) return;
+
+            try {
+                const response = await fetch('/api/teacher/archive_result', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ result_id: resultId })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Result archived successfully.');
+                    loadResults();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to archive result.'));
+                }
+            } catch (error) {
+                alert('❌ Error archiving result.');
+            }
+        }
+
+        // ---------- Unarchive Result ----------
+        async function unarchiveResult(resultId, studentId) {
+            if (!confirm(`Unarchive this result? It will return to the Results list.`)) return;
+
+            try {
+                const response = await fetch('/api/teacher/unarchive_result', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ result_id: resultId })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Result unarchived successfully.');
+                    showStudentProfile(studentId);
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to unarchive result.'));
+                }
+            } catch (error) {
+                alert('❌ Error unarchiving result.');
             }
         }
 
@@ -419,7 +523,7 @@
                 let message = `📊 *Exam Result*\n\n`;
                 message += `👤 Student: ${r.student_name}\n`;
                 message += `📝 Exam: ${r.exam_title}\n`;
-                message += `📅 Date: ${new Date(r.completed_at).toLocaleString()}\n`;
+                message += `📅 Date: ${r.completed_at || 'N/A'}\n`;
                 message += `✅ Score: ${r.score}/${r.total_questions} (${percentage}%)\n\n`;
 
                 const wrongQuestions = r.wrong_answers || [];
@@ -711,7 +815,7 @@
                                     <div>
                                         <strong style="color: #f9fafb;">${e.title}</strong>
                                         <span style="color: #9ca3af; font-size: 14px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 14px;">📌 Assigned to: ${assigned.group_name} (Group ID: ${assigned.group_id} | Telegram: ${assigned.telegram_group_id})</span>` : `<span style="color: #fbbf24; font-size: 14px;">⚠️ Not assigned to any group</span>`}
+                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 14px;">📌 Assigned to: ${assigned.group_name} (Group ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 14px;">⚠️ Not assigned to any group</span>`}
                                     </div>
                                     <div>
                                         ${isAssigned ? 
@@ -733,9 +837,7 @@
             }
         }
 
-        // ---------- Show Assign Form (با Group ID و Telegram Group ID) ----------
-       
-                    // ---------- Show Assign Form (با طراحی بهتر) ----------
+        // ---------- Show Assign Form (با طراحی بهتر) ----------
         function showAssignForm(examId) {
             let groupsHtml = '';
             if (allGroups.length === 0) {
@@ -771,12 +873,7 @@
             `;
         }
 
-
-
-
         // ---------- Assign and Send Exam with Multiple Groups ----------
-        
-                // ---------- Assign and Send Exam with Multiple Groups ----------
         async function assignAndSendExamWithGroups(examId) {
             const checkboxes = document.querySelectorAll('.assign-group-checkbox:checked');
             const groupIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
@@ -833,14 +930,9 @@
             }
         }
 
-
-
-
-
-
         // ---------- Unassign Exam ----------
         async function unassignExam(examId) {
-            if (!confirm(`Are you sure you want to unassign exam ID ${examId}? Students will no longer be able to access it.`)) return;
+            if (!confirm(`Are you sure you want to unassign exam ID ${examId}? Students will no longer be able to access it. Results will be preserved.`)) return;
 
             try {
                 const response = await fetch('/api/teacher/unassign_exam', {
@@ -853,7 +945,7 @@
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
-                    alert('✅ Exam unassigned successfully.');
+                    alert('✅ Exam unassigned successfully. Results are preserved.');
                     showSendExam();
                 } else {
                     alert('❌ ' + (data.message || 'Failed to unassign exam.'));
@@ -864,10 +956,7 @@
         }
 
         // ---------- Send Exam by Exam ID (already assigned) ----------
-
-                   // ---------- Send Exam by Exam ID (already assigned) ----------
         async function sendExamByExamId(examId) {
-            // ابتدا گروهی که آزمون به آن assign شده را پیدا کن
             let assignedGroupIds = [];
             try {
                 const assignData = await fetchAPI('/api/teacher/assignments');
@@ -910,9 +999,6 @@
                 statusDiv.textContent = '❌ Error sending exam.';
             }
         }
-
-
-
 
         // ---------- Error ----------
         function showError(message) {
@@ -982,7 +1068,6 @@
         }
 
         // ---------- Render Current Question ----------
-	        // ---------- Render Current Question ----------
         function renderCurrentQuestion() {
             if (!questions.length) return;
 
@@ -1005,7 +1090,6 @@
             textEl.textContent = question.question_text;
             questionContainer.appendChild(textEl);
 
-            // Audio player if audio_url exists
             if (question.audio_url) {
                 const audioEl = document.createElement('audio');
                 audioEl.controls = true;
@@ -1020,7 +1104,6 @@
             const optionsContainer = document.createElement('div');
             optionsContainer.className = 'options-container';
 
-            // فقط گزینه‌هایی که مقدار دارند را نمایش بده
             const optionKeys = ['A', 'B', 'C', 'D'].filter(key => {
                 return question.options[key] && question.options[key].trim() !== '';
             });
