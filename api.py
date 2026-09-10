@@ -935,6 +935,38 @@ def teacher_result_details(result_id):
     finally:
         connection.close()
 
+@app.route("/api/teacher/students", methods=["DELETE"])
+def teacher_delete_student():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    student_id = data.get("student_id")
+    if not student_id:
+        return jsonify({"status": "error", "message": "student_id is required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("DELETE FROM students WHERE id = ?", (student_id,))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Student not found."}), 404
+        return jsonify({"status": "success", "message": "Student deleted successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+
+
+
 
 if __name__ == "__main__":
     print()
@@ -955,3 +987,5 @@ if __name__ == "__main__":
     print("========================================")
     print()
     app.run(host="127.0.0.1", port=5000, debug=False)
+
+
