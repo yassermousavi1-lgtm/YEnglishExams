@@ -129,22 +129,57 @@
         // ============================================================
 
         // ---------- Dashboard ----------
+	        // ---------- Dashboard (آکادمیک) ----------
         function renderDashboard(userData) {
             document.querySelector('.exam-card').innerHTML = `
-                <div style="text-align: center; padding: 20px;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">👨‍🏫</div>
-                    <h1 style="color: #f9fafb;">Teacher Panel</h1>
-                    <p style="color: #9ca3af;">Welcome, ${userData.telegram_user.first_name}!</p>
-                    <div style="margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <button class="primary-button" style="padding: 16px;" onclick="loadStudents()">👥 Students</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="loadExams()">📝 Exams</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="loadResults()">📊 Results</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="showAddStudent()">➕ Add Student</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="showAddGroup()">➕ Add Group</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="showCreateExam()">📝 Create Exam</button>
-                        <button class="primary-button" style="padding: 16px;" onclick="showSendExam()">📤 Send Exam</button>
+                <div style="padding: 24px 20px;">
+                    
+                    <div style="text-align: center; margin-bottom: 32px;">
+                        <h1 style="color: #f9fafb; font-size: 22px; font-weight: 600; margin: 0;">YEnglish Exams</h1>
+                        <p style="color: #9ca3af; font-size: 14px; margin: 4px 0 0 0;">Teacher Dashboard</p>
                     </div>
-                    <p style="color: #6b7280; margin-top: 30px; font-size: 14px;">More features coming soon...</p>
+
+                    <div style="margin-bottom: 28px;">
+                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Create</h3>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <button class="academic-menu-item" onclick="showAddStudent()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Add Student</span>
+                            </button>
+                            <button class="academic-menu-item" onclick="showAddGroup()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Add Group</span>
+                            </button>
+                            <button class="academic-menu-item" onclick="showCreateExam()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Create Exam</span>
+                            </button>
+                            <button class="academic-menu-item" onclick="showSendExam()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Send Exam</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 28px;">
+                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Management</h3>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <button class="academic-menu-item" onclick="loadStudents()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Students</span>
+                            </button>
+                            <button class="academic-menu-item" onclick="loadExams()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Exams</span>
+                            </button>
+                            <button class="academic-menu-item" onclick="loadResults()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Results</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <p style="color: #4b5563; text-align: center; font-size: 12px; margin-top: 24px;">YEnglish Exams v2.0</p>
                 </div>
             `;
         }

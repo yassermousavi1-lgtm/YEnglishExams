@@ -757,3 +757,35 @@ body {
         font-size: 44px;
     }
 }
+
+/* ============================================================
+   ACADEMIC MENU ITEMS (Teacher Panel)
+   ============================================================ */
+
+.academic-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 16px;
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    color: #e5e7eb;
+    font-size: 15px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.academic-menu-item:hover {
+    background: #1a2744;
+    border-color: #4b5563;
+    transform: translateX(4px);
+}
+
+.academic-menu-item:active {
+    transform: translateX(2px) scale(0.99);
+}
