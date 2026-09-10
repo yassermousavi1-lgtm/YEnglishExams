@@ -734,33 +734,52 @@
         }
 
         // ---------- Show Assign Form (با Group ID و Telegram Group ID) ----------
+       
+                    // ---------- Show Assign Form (با طراحی بهتر) ----------
         function showAssignForm(examId) {
-            let optionsHtml = '';
-            allGroups.forEach(g => {
-                optionsHtml += `<option value="${g.id}">Group ID: ${g.id} | Telegram Group ID: ${g.telegram_group_id} | ${g.name}</option>`;
-            });
+            let groupsHtml = '';
+            if (allGroups.length === 0) {
+                groupsHtml = `<p style="color: #fbbf24;">⚠️ No groups available. Please add a group first.</p>`;
+            } else {
+                allGroups.forEach(g => {
+                    groupsHtml += `
+                        <label style="display: flex; align-items: center; gap: 12px; background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; cursor: pointer;">
+                            <input type="checkbox" class="assign-group-checkbox" value="${g.id}" style="width: 20px; height: 20px; cursor: pointer;">
+                            <div style="flex: 1;">
+                                <strong style="color: #f9fafb; font-size: 16px; display: block;">📚 ${g.name}</strong>
+                                <span style="color: #60a5fa; font-size: 13px; display: block;">Group ID: ${g.id}</span>
+                                <span style="color: #9ca3af; font-size: 12px; display: block;">Telegram ID: ${g.telegram_group_id}</span>
+                            </div>
+                        </label>
+                    `;
+                });
+            }
 
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
                     <h2 style="color: #f9fafb;">📌 Assign Exam to Groups</h2>
                     <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="showSendExam()">← Back</button>
-                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
-                        <label style="color: #9ca3af;">Select Groups (hold Ctrl to select multiple):</label>
-                        <select id="assignGroupSelect" multiple style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb; min-height: 100px;">
-                            ${optionsHtml}
-                        </select>
-                        <button class="primary-button" style="padding: 14px;" onclick="assignAndSendExamWithGroups(${examId})">Assign & Send</button>
+                    <div style="margin-top: 16px;">
+                        <p style="color: #9ca3af; margin-bottom: 12px;">Select one or more groups:</p>
+                        <div id="assignGroupList">
+                            ${groupsHtml}
+                        </div>
+                        <button class="primary-button" style="padding: 14px; margin-top: 12px; width: 100%;" onclick="assignAndSendExamWithGroups(${examId})">📌 Assign & Send</button>
                     </div>
-                    <div id="assignStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                    <div id="assignStatus" style="margin-top: 12px; color: #9ca3af; text-align: center;"></div>
                 </div>
             `;
         }
 
+
+
+
         // ---------- Assign and Send Exam with Multiple Groups ----------
+        
+                // ---------- Assign and Send Exam with Multiple Groups ----------
         async function assignAndSendExamWithGroups(examId) {
-            const groupSelect = document.getElementById('assignGroupSelect');
-            const selectedOptions = groupSelect.selectedOptions;
-            const groupIds = Array.from(selectedOptions).map(opt => parseInt(opt.value));
+            const checkboxes = document.querySelectorAll('.assign-group-checkbox:checked');
+            const groupIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
 
             if (groupIds.length === 0) {
                 document.getElementById('assignStatus').textContent = '⚠️ Please select at least one group.';
@@ -813,6 +832,11 @@
                 document.getElementById('assignStatus').textContent = '❌ Error processing request.';
             }
         }
+
+
+
+
+
 
         // ---------- Unassign Exam ----------
         async function unassignExam(examId) {
