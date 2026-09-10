@@ -840,7 +840,25 @@
         }
 
         // ---------- Send Exam by Exam ID (already assigned) ----------
+
+                   // ---------- Send Exam by Exam ID (already assigned) ----------
         async function sendExamByExamId(examId) {
+            // ابتدا گروهی که آزمون به آن assign شده را پیدا کن
+            let assignedGroupIds = [];
+            try {
+                const assignData = await fetchAPI('/api/teacher/assignments');
+                const assigned = assignData.assignments.filter(a => a.exam_id === examId);
+                assignedGroupIds = assigned.map(a => a.group_id);
+            } catch (e) {
+                alert('❌ Could not find assigned groups.');
+                return;
+            }
+
+            if (assignedGroupIds.length === 0) {
+                alert('❌ This exam is not assigned to any group. Please assign it first.');
+                return;
+            }
+
             const statusDiv = document.createElement('div');
             statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af; text-align: center;';
             document.querySelector('.exam-card > div').appendChild(statusDiv);
@@ -855,12 +873,12 @@
                     },
                     body: JSON.stringify({
                         exam_id: examId,
-                        group_ids: [1]
+                        group_ids: assignedGroupIds
                     })
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
-                    statusDiv.textContent = '✅ Exam sent successfully!';
+                    statusDiv.textContent = '✅ ' + (data.message || 'Exam sent successfully!');
                 } else {
                     statusDiv.textContent = '❌ ' + (data.message || 'Failed to send exam.');
                 }
@@ -868,6 +886,9 @@
                 statusDiv.textContent = '❌ Error sending exam.';
             }
         }
+
+
+
 
         // ---------- Error ----------
         function showError(message) {
