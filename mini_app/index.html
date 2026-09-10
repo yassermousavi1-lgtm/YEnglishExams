@@ -128,8 +128,7 @@
         // RENDER FUNCTIONS
         // ============================================================
 
-        // ---------- Dashboard ----------
-	        // ---------- Dashboard (آکادمیک) ----------
+        // ---------- Dashboard (آکادمیک) ----------
         function renderDashboard(userData) {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 24px 20px;">
@@ -184,7 +183,15 @@
             `;
         }
 
-        // ---------- Students List (با کلیک روی دانشجو) ----------
+        // ---------- Academic Page Header ----------
+        function academicHeader(title, backAction) {
+            return `
+                <button class="academic-back-button" onclick="${backAction}">▸ Back</button>
+                <h2 class="academic-page-title">${title}</h2>
+            `;
+        }
+
+        // ---------- Students List ----------
         async function loadStudents() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading students...</p></div>`;
             try {
@@ -194,24 +201,25 @@
                     return;
                 }
                 let html = `
-                    <div style="padding: 16px;">
-                        <h2 style="color: #f9fafb;">👥 Students (${data.total})</h2>
-                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
-                        <div style="margin-top: 12px;">
+                    <div style="padding: 20px;">
+                        ${academicHeader('Students (' + data.total + ')', 'renderDashboard(USER_DATA)')}
+                        <div style="margin-top: 16px;">
                 `;
                 if (data.students.length === 0) {
                     html += `<p style="color: #9ca3af;">No students registered yet.</p>`;
                 } else {
                     data.students.forEach(s => {
                         html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="showStudentProfile(${s.id})">
-                                <div>
-                                    <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
-                                    <span style="color: #9ca3af; font-size: 14px; display: block;">📱 Telegram ID: ${s.telegram_user_id}</span>
-                                    <span style="color: #60a5fa; font-size: 14px; display: block;">📚 Group ID: ${s.group_id} | ${s.group_name}</span>
-                                </div>
-                                <div>
-                                    <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="event.stopPropagation(); deleteStudent(${s.id})" title="Delete Student">✕</button>
+                            <div class="academic-card" style="cursor: pointer;" onclick="showStudentProfile(${s.id})">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
+                                        <span style="color: #9ca3af; font-size: 13px; display: block;">Telegram ID: ${s.telegram_user_id}</span>
+                                        <span style="color: #60a5fa; font-size: 13px; display: block;">Group ID: ${s.group_id} | ${s.group_name}</span>
+                                    </div>
+                                    <div>
+                                        <button class="academic-icon-btn danger" onclick="event.stopPropagation(); deleteStudent(${s.id})" title="Delete Student">✕</button>
+                                    </div>
                                 </div>
                             </div>
                         `;
@@ -233,38 +241,36 @@
                     showError(data.message || 'Failed to load student profile.');
                     return;
                 }
-
                 const s = data.student;
                 let html = `
-                    <div style="padding: 16px;">
-                        <button class="secondary-button" style="margin: 0 0 12px 0; padding: 8px 16px;" onclick="loadStudents()">← Back</button>
+                    <div style="padding: 20px;">
+                        ${academicHeader('Student Profile', 'loadStudents()')}
                         
-                        <div style="background: #111827; padding: 16px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 16px;">
-                            <div style="font-size: 48px; text-align: center; margin-bottom: 8px;">👤</div>
-                            <h2 style="color: #f9fafb; text-align: center; margin: 8px 0;">${s.first_name} ${s.last_name || ''}</h2>
-                            <p style="color: #9ca3af; text-align: center; font-size: 14px;">📱 Telegram ID: ${s.telegram_user_id}</p>
-                            <p style="color: #60a5fa; text-align: center; font-size: 14px;">📚 Group ID: ${s.group_id} | ${s.group_name}</p>
+                        <div class="academic-card" style="text-align: center; margin-bottom: 20px;">
+                            <div style="font-size: 40px; margin-bottom: 8px;">👤</div>
+                            <h3 style="color: #f9fafb; margin: 8px 0;">${s.first_name} ${s.last_name || ''}</h3>
+                            <p style="color: #9ca3af; font-size: 13px; margin: 4px 0;">Telegram ID: ${s.telegram_user_id}</p>
+                            <p style="color: #60a5fa; font-size: 13px; margin: 4px 0;">Group ID: ${s.group_id} | ${s.group_name}</p>
                         </div>
                         
-                        <h3 style="color: #f9fafb; margin-bottom: 12px;">📊 Archived Results (${data.total})</h3>
+                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Archived Results (${data.total})</h3>
                 `;
 
                 if (data.results.length === 0) {
                     html += `<p style="color: #9ca3af; text-align: center; padding: 20px;">No archived results yet.</p>`;
                 } else {
                     data.results.forEach(r => {
-                        const date = r.completed_at ? r.completed_at : 'N/A';
                         html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                            <div class="academic-card">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
                                         <strong style="color: #f9fafb;">${r.exam_title}</strong>
                                         <span style="color: #34d399; font-weight: 600; display: block;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
-                                        <span style="color: #9ca3af; font-size: 12px; display: block;">📅 ${date}</span>
+                                        <span style="color: #9ca3af; font-size: 12px; display: block;">${r.completed_at || 'N/A'}</span>
                                     </div>
                                     <div>
-                                        <button style="background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="shareResult(${r.id})" title="Share Result">📤</button>
-                                        <button style="background: none; border: none; color: #fbbf24; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="unarchiveResult(${r.id}, ${studentId})" title="Unarchive">↩️</button>
+                                        <button class="academic-icon-btn primary" onclick="shareResult(${r.id})" title="Share">📤</button>
+                                        <button class="academic-icon-btn warning" onclick="unarchiveResult(${r.id}, ${studentId})" title="Unarchive">↩️</button>
                                     </div>
                                 </div>
                             </div>
@@ -282,14 +288,10 @@
         // ---------- Delete Student ----------
         async function deleteStudent(studentId) {
             if (!confirm(`Are you sure you want to delete this student? This action cannot be undone.`)) return;
-
             try {
                 const response = await fetch('/api/teacher/students', {
                     method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
                     body: JSON.stringify({ student_id: studentId })
                 });
                 const data = await response.json();
@@ -313,7 +315,6 @@
                     showError(data.message || 'Failed to load exams.');
                     return;
                 }
-
                 const grouped = {};
                 data.exams.forEach(e => {
                     const cat = e.category || 'Uncategorized';
@@ -322,30 +323,29 @@
                 });
 
                 let html = `
-                    <div style="padding: 16px;">
-                        <h2 style="color: #f9fafb;">📝 Exams (${data.total})</h2>
-                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
-                        <div style="margin-top: 12px;">
+                    <div style="padding: 20px;">
+                        ${academicHeader('Exams (' + data.total + ')', 'renderDashboard(USER_DATA)')}
                 `;
-
                 if (data.exams.length === 0) {
                     html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
                 } else {
                     Object.keys(grouped).forEach(cat => {
                         html += `
-                            <div style="margin-bottom: 16px;">
-                                <h3 style="color: #60a5fa; margin-bottom: 8px;">📂 ${cat}</h3>
+                            <div style="margin-bottom: 20px;">
+                                <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">${cat}</h3>
                         `;
                         grouped[cat].forEach(e => {
                             html += `
-                                <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong style="color: #f9fafb;">${e.title}</strong>
-                                        <span style="color: #9ca3af; font-size: 14px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                    </div>
-                                    <div>
-                                        <button style="background: none; border: none; color: #fbbf24; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="showEditExam(${e.id})" title="Edit Exam">✏️</button>
-                                        <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="deleteExam(${e.id})" title="Delete Exam">✕</button>
+                                <div class="academic-card">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong style="color: #f9fafb;">${e.title}</strong>
+                                            <span style="color: #9ca3af; font-size: 13px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                        </div>
+                                        <div>
+                                            <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
+                                            <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
+                                        </div>
                                     </div>
                                 </div>
                             `;
@@ -353,31 +353,26 @@
                         html += `</div>`;
                     });
                 }
-
-                html += `</div></div>`;
+                html += `</div>`;
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading exams.');
             }
         }
 
-        // ---------- Show Edit Exam Form ----------
+        // ---------- Show Edit Exam ----------
         function showEditExam(examId) {
             fetchAPI('/api/teacher/exams').then(data => {
                 const exam = data.exams.find(e => e.id === examId);
-                if (!exam) {
-                    alert('Exam not found.');
-                    return;
-                }
+                if (!exam) { alert('Exam not found.'); return; }
                 document.querySelector('.exam-card').innerHTML = `
                     <div style="padding: 20px;">
-                        <h2 style="color: #f9fafb;">✏️ Edit Exam</h2>
-                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="loadExams()">← Back</button>
-                        <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
-                            <input id="editExamTitle" type="text" value="${exam.title}" placeholder="Exam Title" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                            <input id="editExamCategory" type="text" value="${exam.category || ''}" placeholder="Category" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                            <input id="editExamTimeLimit" type="number" value="${exam.time_limit}" placeholder="Total Time (minutes)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                            <button class="primary-button" style="padding: 14px;" onclick="updateExam(${examId})">Save Changes</button>
+                        ${academicHeader('Edit Exam', 'loadExams()')}
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <input id="editExamTitle" type="text" value="${exam.title}" placeholder="Exam Title" class="academic-input">
+                            <input id="editExamCategory" type="text" value="${exam.category || ''}" placeholder="Category" class="academic-input">
+                            <input id="editExamTimeLimit" type="number" value="${exam.time_limit}" placeholder="Total Time (minutes)" class="academic-input">
+                            <button class="academic-primary-btn" onclick="updateExam(${examId})">Save Changes</button>
                         </div>
                         <div id="editExamStatus" style="margin-top: 12px; color: #9ca3af;"></div>
                     </div>
@@ -390,25 +385,15 @@
             const title = document.getElementById('editExamTitle').value.trim();
             const category = document.getElementById('editExamCategory').value.trim();
             const timeLimit = document.getElementById('editExamTimeLimit').value.trim();
-
             if (!title || !timeLimit) {
                 document.getElementById('editExamStatus').textContent = '⚠️ Title and Time are required.';
                 return;
             }
-
             try {
                 const response = await fetch('/api/teacher/exams', {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        exam_id: examId,
-                        title: title,
-                        category: category || 'Uncategorized',
-                        time_limit: parseInt(timeLimit)
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ exam_id: examId, title, category: category || 'Uncategorized', time_limit: parseInt(timeLimit) })
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
@@ -424,145 +409,100 @@
 
         // ---------- Delete Exam ----------
         async function deleteExam(examId) {
-            if (!confirm(`Are you sure you want to delete exam ID ${examId}? This action cannot be undone.`)) return;
-
+            if (!confirm(`Are you sure you want to delete exam ID ${examId}?`)) return;
             try {
                 const response = await fetch('/api/teacher/exams', {
                     method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
                     body: JSON.stringify({ exam_id: examId })
                 });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    alert('✅ Exam deleted successfully.');
-                    loadExams();
-                } else {
-                    alert('❌ ' + (data.message || 'Failed to delete exam.'));
-                }
-            } catch (error) {
-                alert('❌ Error deleting exam.');
-            }
+                if (data.status === 'success') { alert('✅ Exam deleted successfully.'); loadExams(); }
+                else { alert('❌ ' + (data.message || 'Failed to delete exam.')); }
+            } catch (error) { alert('❌ Error deleting exam.'); }
         }
 
-        // ---------- Results List (با دکمه Archive) ----------
+        // ---------- Results List ----------
         async function loadResults() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading results...</p></div>`;
             try {
                 const data = await fetchAPI('/api/teacher/results');
-                if (data.status !== 'success') {
-                    showError(data.message || 'Failed to load results.');
-                    return;
-                }
+                if (data.status !== 'success') { showError(data.message || 'Failed to load results.'); return; }
                 let html = `
-                    <div style="padding: 16px;">
-                        <h2 style="color: #f9fafb;">📊 Results (${data.total})</h2>
-                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
-                        <div style="margin-top: 12px;">
+                    <div style="padding: 20px;">
+                        ${academicHeader('Results (' + data.total + ')', 'renderDashboard(USER_DATA)')}
                 `;
                 if (data.results.length === 0) {
                     html += `<p style="color: #9ca3af;">No results yet.</p>`;
                 } else {
                     data.results.forEach(r => {
-                        const date = r.completed_at ? r.completed_at : 'N/A';
                         html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                            <div class="academic-card">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
                                         <strong style="color: #f9fafb;">${r.student_name}</strong>
-                                        <span style="color: #60a5fa; display: block;">${r.exam_title}</span>
-                                        <span style="color: #34d399; font-weight: 600;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
-                                        <span style="color: #9ca3af; font-size: 12px; display: block;">📅 ${date}</span>
+                                        <span style="color: #60a5fa; display: block; font-size: 13px;">${r.exam_title}</span>
+                                        <span style="color: #34d399; font-weight: 600; font-size: 14px;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
+                                        <span style="color: #9ca3af; font-size: 12px; display: block;">${r.completed_at || 'N/A'}</span>
                                     </div>
                                     <div>
-                                        <button style="background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="shareResult(${r.id})" title="Share Result">📤</button>
-                                        <button style="background: none; border: none; color: #fbbf24; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="archiveResult(${r.id})" title="Archive">📦</button>
-                                        <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 4px 8px;" onclick="deleteResult(${r.id})" title="Delete Result">✕</button>
+                                        <button class="academic-icon-btn primary" onclick="shareResult(${r.id})" title="Share">📤</button>
+                                        <button class="academic-icon-btn warning" onclick="archiveResult(${r.id})" title="Archive">📦</button>
+                                        <button class="academic-icon-btn danger" onclick="deleteResult(${r.id})" title="Delete">✕</button>
                                     </div>
                                 </div>
                             </div>
                         `;
                     });
                 }
-                html += `</div></div>`;
+                html += `</div>`;
                 document.querySelector('.exam-card').innerHTML = html;
-            } catch (error) {
-                showError('Error loading results.');
-            }
+            } catch (error) { showError('Error loading results.'); }
         }
 
         // ---------- Archive Result ----------
         async function archiveResult(resultId) {
-            if (!confirm(`Archive this result? It will be moved to the student's profile.`)) return;
-
+            if (!confirm(`Archive this result? It will move to the student's profile.`)) return;
             try {
                 const response = await fetch('/api/teacher/archive_result', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
                     body: JSON.stringify({ result_id: resultId })
                 });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    alert('✅ Result archived successfully.');
-                    loadResults();
-                } else {
-                    alert('❌ ' + (data.message || 'Failed to archive result.'));
-                }
-            } catch (error) {
-                alert('❌ Error archiving result.');
-            }
+                if (data.status === 'success') { alert('✅ Result archived successfully.'); loadResults(); }
+                else { alert('❌ ' + (data.message || 'Failed to archive result.')); }
+            } catch (error) { alert('❌ Error archiving result.'); }
         }
 
         // ---------- Unarchive Result ----------
         async function unarchiveResult(resultId, studentId) {
             if (!confirm(`Unarchive this result? It will return to the Results list.`)) return;
-
             try {
                 const response = await fetch('/api/teacher/unarchive_result', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
                     body: JSON.stringify({ result_id: resultId })
                 });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    alert('✅ Result unarchived successfully.');
-                    showStudentProfile(studentId);
-                } else {
-                    alert('❌ ' + (data.message || 'Failed to unarchive result.'));
-                }
-            } catch (error) {
-                alert('❌ Error unarchiving result.');
-            }
+                if (data.status === 'success') { alert('✅ Result unarchived successfully.'); showStudentProfile(studentId); }
+                else { alert('❌ ' + (data.message || 'Failed to unarchive result.')); }
+            } catch (error) { alert('❌ Error unarchiving result.'); }
         }
 
         // ---------- Share Result ----------
         async function shareResult(resultId) {
             try {
                 const data = await fetchAPI(`/api/teacher/result_details/${resultId}`);
-                if (data.status !== 'success') {
-                    alert('Failed to load result details.');
-                    return;
-                }
-
+                if (data.status !== 'success') { alert('Failed to load result details.'); return; }
                 const r = data.result;
                 const percentage = Math.round((r.score / r.total_questions) * 100);
-
                 let message = `📊 *Exam Result*\n\n`;
                 message += `👤 Student: ${r.student_name}\n`;
                 message += `📝 Exam: ${r.exam_title}\n`;
                 message += `📅 Date: ${r.completed_at || 'N/A'}\n`;
                 message += `✅ Score: ${r.score}/${r.total_questions} (${percentage}%)\n\n`;
-
                 const wrongQuestions = r.wrong_answers || [];
-
                 if (wrongQuestions.length > 0) {
                     message += `❌ *Wrong Answers:*\n`;
                     wrongQuestions.forEach((q, i) => {
@@ -570,274 +510,177 @@
                         message += `   Your answer: ${q.selected_answer || 'No answer'}\n`;
                         message += `   Correct answer: ${q.correct_answer}\n\n`;
                     });
-                } else {
-                    message += `🎉 *All answers are correct!*\n`;
-                }
-
+                } else { message += `🎉 *All answers are correct!*\n`; }
                 message += `\n#YEnglishExams`;
-
                 const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(message)}`;
                 window.open(shareUrl, '_blank');
-
-            } catch (error) {
-                alert('Error loading result details.');
-            }
+            } catch (error) { alert('Error loading result details.'); }
         }
 
         // ---------- Delete Result ----------
         async function deleteResult(resultId) {
             if (!confirm(`Are you sure you want to delete this result?`)) return;
-
             try {
                 const response = await fetch('/api/teacher/results', {
                     method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
                     body: JSON.stringify({ result_id: resultId })
                 });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    alert('✅ Result deleted successfully.');
-                    loadResults();
-                } else {
-                    alert('❌ ' + (data.message || 'Failed to delete result.'));
-                }
-            } catch (error) {
-                alert('❌ Error deleting result.');
-            }
+                if (data.status === 'success') { alert('✅ Result deleted successfully.'); loadResults(); }
+                else { alert('❌ ' + (data.message || 'Failed to delete result.')); }
+            } catch (error) { alert('❌ Error deleting result.'); }
         }
 
         // ---------- Add Student Form ----------
         function showAddStudent() {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <h2 style="color: #f9fafb;">➕ Add Student</h2>
-                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
-                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
-                        <input id="studentFirstName" type="text" placeholder="First Name" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="studentLastName" type="text" placeholder="Last Name (optional)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="studentTelegramId" type="text" placeholder="Telegram User ID" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="studentGroupId" type="text" placeholder="Group ID" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <button class="primary-button" style="padding: 14px;" onclick="addStudent()">Add Student</button>
+                    ${academicHeader('Add Student', 'renderDashboard(USER_DATA)')}
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <input id="studentFirstName" type="text" placeholder="First Name" class="academic-input">
+                        <input id="studentLastName" type="text" placeholder="Last Name (optional)" class="academic-input">
+                        <input id="studentTelegramId" type="text" placeholder="Telegram User ID" class="academic-input">
+                        <input id="studentGroupId" type="text" placeholder="Group ID" class="academic-input">
+                        <button class="academic-primary-btn" onclick="addStudent()">Add Student</button>
                     </div>
                     <div id="addStudentStatus" style="margin-top: 12px; color: #9ca3af;"></div>
                 </div>
             `;
         }
 
-        // ---------- Add Student API ----------
         async function addStudent() {
             const firstName = document.getElementById('studentFirstName').value.trim();
             const lastName = document.getElementById('studentLastName').value.trim();
             const telegramUserId = document.getElementById('studentTelegramId').value.trim();
             const groupId = document.getElementById('studentGroupId').value.trim();
-
             if (!firstName || !telegramUserId || !groupId) {
                 document.getElementById('addStudentStatus').textContent = '⚠️ Please fill in all required fields.';
                 return;
             }
-
             document.getElementById('addStudentStatus').textContent = 'Adding student...';
-
             try {
                 const response = await fetch('/api/teacher/students', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        first_name: firstName,
-                        last_name: lastName,
-                        telegram_user_id: parseInt(telegramUserId),
-                        group_id: parseInt(groupId)
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ first_name: firstName, last_name: lastName, telegram_user_id: parseInt(telegramUserId), group_id: parseInt(groupId) })
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
                     document.getElementById('addStudentStatus').textContent = '✅ Student added successfully!';
                     setTimeout(() => showAddStudent(), 2000);
-                } else {
-                    document.getElementById('addStudentStatus').textContent = '❌ ' + (data.message || 'Failed to add student.');
-                }
-            } catch (error) {
-                document.getElementById('addStudentStatus').textContent = '❌ Error adding student.';
-            }
+                } else { document.getElementById('addStudentStatus').textContent = '❌ ' + (data.message || 'Failed to add student.'); }
+            } catch (error) { document.getElementById('addStudentStatus').textContent = '❌ Error adding student.'; }
         }
 
         // ---------- Add Group Form ----------
         function showAddGroup() {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <h2 style="color: #f9fafb;">➕ Add Group</h2>
-                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
-                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
-                        <input id="groupName" type="text" placeholder="Group Name" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="groupTelegramId" type="text" placeholder="Telegram Group ID (e.g. -1234567890)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <button class="primary-button" style="padding: 14px;" onclick="addGroup()">Add Group</button>
+                    ${academicHeader('Add Group', 'renderDashboard(USER_DATA)')}
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <input id="groupName" type="text" placeholder="Group Name" class="academic-input">
+                        <input id="groupTelegramId" type="text" placeholder="Telegram Group ID (e.g. -1234567890)" class="academic-input">
+                        <button class="academic-primary-btn" onclick="addGroup()">Add Group</button>
                     </div>
                     <div id="addGroupStatus" style="margin-top: 12px; color: #9ca3af;"></div>
                 </div>
             `;
         }
 
-        // ---------- Add Group API ----------
         async function addGroup() {
             const name = document.getElementById('groupName').value.trim();
             const telegramGroupId = document.getElementById('groupTelegramId').value.trim();
-
             if (!name || !telegramGroupId) {
                 document.getElementById('addGroupStatus').textContent = '⚠️ Please fill in all fields.';
                 return;
             }
-
             document.getElementById('addGroupStatus').textContent = 'Adding group...';
-
             try {
                 const response = await fetch('/api/teacher/groups', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        name: name,
-                        telegram_group_id: parseInt(telegramGroupId)
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ name, telegram_group_id: parseInt(telegramGroupId) })
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
                     document.getElementById('addGroupStatus').textContent = '✅ Group added successfully! (ID: ' + data.group_id + ')';
                     setTimeout(() => showAddGroup(), 2000);
-                } else {
-                    document.getElementById('addGroupStatus').textContent = '❌ ' + (data.message || 'Failed to add group.');
-                }
-            } catch (error) {
-                document.getElementById('addGroupStatus').textContent = '❌ Error adding group.';
-            }
+                } else { document.getElementById('addGroupStatus').textContent = '❌ ' + (data.message || 'Failed to add group.'); }
+            } catch (error) { document.getElementById('addGroupStatus').textContent = '❌ Error adding group.'; }
         }
 
-        // ---------- Create Exam (با دکمه Download JSON) ----------
+        // ---------- Create Exam ----------
         function showCreateExam() {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                        <h2 style="color: #f9fafb; margin: 0;">📝 Create Exam</h2>
-                        <a href="/template.json" download="template.json" style="color: #60a5fa; text-decoration: none; font-size: 14px; background: #1f2937; padding: 8px 16px; border-radius: 8px; border: 1px solid #374151;">⬇️ Download JSON Template</a>
+                    ${academicHeader('Create Exam', 'renderDashboard(USER_DATA)')}
+                    <div style="text-align: right; margin-bottom: 12px;">
+                        <a href="/template.json" download="template.json" class="academic-link">⬇ Download JSON Template</a>
                     </div>
-                    <button class="secondary-button" style="margin: 0 0 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
-                    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 12px;">
-                        <input id="examTitle" type="text" placeholder="Exam Title" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="examCategory" type="text" placeholder="Category (e.g. Book Name, Topic)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="examTimeLimit" type="number" placeholder="Total Time (minutes)" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <input id="examQuestionCount" type="number" placeholder="Number of Questions" style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb;">
-                        <textarea id="examQuestionsJson" rows="12" placeholder='[
-  {
-    "question_text": "What is the capital of France?",
-    "option_a": "Berlin",
-    "option_b": "Madrid",
-    "option_c": "Paris",
-    "option_d": "Rome",
-    "correct_answer": "C"
-  }
-]' style="padding: 12px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f9fafb; font-family: monospace; resize: vertical; direction: ltr;"></textarea>
-                        <button class="primary-button" style="padding: 14px;" onclick="createExamWithJson()">Create Exam</button>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <input id="examTitle" type="text" placeholder="Exam Title" class="academic-input">
+                        <input id="examCategory" type="text" placeholder="Category (e.g. Book Name, Topic)" class="academic-input">
+                        <input id="examTimeLimit" type="number" placeholder="Total Time (minutes)" class="academic-input">
+                        <input id="examQuestionCount" type="number" placeholder="Number of Questions" class="academic-input">
+                        <textarea id="examQuestionsJson" rows="12" placeholder='[{"question_text":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A"}]' class="academic-input" style="font-family: monospace; direction: ltr; resize: vertical;"></textarea>
+                        <button class="academic-primary-btn" onclick="createExamWithJson()">Create Exam</button>
                     </div>
                     <div id="createExamStatus" style="margin-top: 12px; color: #9ca3af;"></div>
                 </div>
             `;
         }
 
-        // ---------- Create Exam with JSON API ----------
         async function createExamWithJson() {
             const title = document.getElementById('examTitle').value.trim();
             const category = document.getElementById('examCategory').value.trim();
             const timeLimit = document.getElementById('examTimeLimit').value.trim();
             const questionCount = document.getElementById('examQuestionCount').value.trim();
             const questionsJson = document.getElementById('examQuestionsJson').value.trim();
-
             if (!title || !timeLimit || !questionCount || !questionsJson) {
                 document.getElementById('createExamStatus').textContent = '⚠️ Please fill in all fields.';
                 return;
             }
-
             let questions;
-            try {
-                questions = JSON.parse(questionsJson);
-            } catch (error) {
-                document.getElementById('createExamStatus').textContent = '⚠️ Invalid JSON format. Please check your input.';
-                return;
-            }
-
+            try { questions = JSON.parse(questionsJson); }
+            catch (error) { document.getElementById('createExamStatus').textContent = '⚠️ Invalid JSON format.'; return; }
             if (!Array.isArray(questions) || questions.length === 0) {
                 document.getElementById('createExamStatus').textContent = '⚠️ Questions must be a non-empty array.';
                 return;
             }
-
             if (questions.length !== parseInt(questionCount)) {
-                document.getElementById('createExamStatus').textContent = '⚠️ Number of questions does not match the JSON data.';
+                document.getElementById('createExamStatus').textContent = '⚠️ Number of questions does not match.';
                 return;
             }
-
-            document.getElementById('createExamStatus').textContent = 'Creating exam and saving questions...';
-
+            document.getElementById('createExamStatus').textContent = 'Creating exam...';
             try {
                 const response = await fetch('/api/teacher/exams_with_questions', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        title: title,
-                        category: category || 'Uncategorized',
-                        time_limit: parseInt(timeLimit),
-                        questions: questions
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ title, category: category || 'Uncategorized', time_limit: parseInt(timeLimit), questions })
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
                     document.getElementById('createExamStatus').textContent = '✅ Exam created successfully! (ID: ' + data.exam_id + ')';
                     setTimeout(() => showCreateExam(), 2000);
-                } else {
-                    document.getElementById('createExamStatus').textContent = '❌ ' + (data.message || 'Failed to create exam.');
-                }
-            } catch (error) {
-                document.getElementById('createExamStatus').textContent = '❌ Error creating exam.';
-            }
+                } else { document.getElementById('createExamStatus').textContent = '❌ ' + (data.message || 'Failed to create exam.'); }
+            } catch (error) { document.getElementById('createExamStatus').textContent = '❌ Error creating exam.'; }
         }
 
         // ---------- Send Exam ----------
         async function showSendExam() {
-            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading assignments...</p></div>`;
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading...</p></div>`;
             try {
                 const [examsData, assignmentsData, groupsData] = await Promise.all([
-                    fetchAPI('/api/teacher/exams'),
-                    fetchAPI('/api/teacher/assignments'),
-                    fetchAPI('/api/teacher/groups')
+                    fetchAPI('/api/teacher/exams'), fetchAPI('/api/teacher/assignments'), fetchAPI('/api/teacher/groups')
                 ]);
-
                 if (examsData.status !== 'success' || assignmentsData.status !== 'success' || groupsData.status !== 'success') {
-                    showError('Failed to load data.');
-                    return;
+                    showError('Failed to load data.'); return;
                 }
-
                 allGroups = groupsData.groups || [];
-
                 const assignedMap = {};
-                assignmentsData.assignments.forEach(a => {
-                    assignedMap[a.exam_id] = a;
-                });
-
-                let html = `
-                    <div style="padding: 16px;">
-                        <h2 style="color: #f9fafb;">📤 Send Exam</h2>
-                        <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="renderDashboard(USER_DATA)">← Back</button>
-                        <div style="margin-top: 12px;">
-                `;
-
+                assignmentsData.assignments.forEach(a => { assignedMap[a.exam_id] = a; });
+                let html = `<div style="padding: 20px;">${academicHeader('Send Exam', 'renderDashboard(USER_DATA)')}`;
                 if (examsData.exams.length === 0) {
                     html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
                 } else {
@@ -845,18 +688,18 @@
                         const assigned = assignedMap[e.id];
                         const isAssigned = !!assigned;
                         html += `
-                            <div style="background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151;">
+                            <div class="academic-card">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
                                         <strong style="color: #f9fafb;">${e.title}</strong>
-                                        <span style="color: #9ca3af; font-size: 14px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 14px;">📌 Assigned to: ${assigned.group_name} (Group ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 14px;">⚠️ Not assigned to any group</span>`}
+                                        <span style="color: #9ca3af; font-size: 13px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 13px;">Assigned to: ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 13px;">Not assigned</span>`}
                                     </div>
                                     <div>
                                         ${isAssigned ? 
-                                            `<button class="primary-button" style="padding: 4px 12px; margin-right: 4px;" onclick="sendExamByExamId(${e.id})">📤 Send</button>
-                                             <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; padding: 4px 8px;" onclick="unassignExam(${e.id})" title="Unassign">🔓</button>` :
-                                            `<button class="primary-button" style="padding: 4px 12px; background: #2563eb;" onclick="showAssignForm(${e.id})">📌 Assign & Send</button>`
+                                            `<button class="academic-icon-btn primary" onclick="sendExamByExamId(${e.id})" title="Send">📤</button>
+                                             <button class="academic-icon-btn danger" onclick="unassignExam(${e.id})" title="Unassign">🔓</button>` :
+                                            `<button class="academic-primary-btn small" onclick="showAssignForm(${e.id})">Assign & Send</button>`
                                         }
                                     </div>
                                 </div>
@@ -864,231 +707,140 @@
                         `;
                     });
                 }
-
-                html += `</div></div>`;
+                html += `</div>`;
                 document.querySelector('.exam-card').innerHTML = html;
-            } catch (error) {
-                showError('Error loading data.');
-            }
+            } catch (error) { showError('Error loading data.'); }
         }
 
-        // ---------- Show Assign Form (با طراحی بهتر) ----------
         function showAssignForm(examId) {
             let groupsHtml = '';
             if (allGroups.length === 0) {
-                groupsHtml = `<p style="color: #fbbf24;">⚠️ No groups available. Please add a group first.</p>`;
+                groupsHtml = `<p style="color: #fbbf24;">No groups available.</p>`;
             } else {
                 allGroups.forEach(g => {
                     groupsHtml += `
-                        <label style="display: flex; align-items: center; gap: 12px; background: #111827; padding: 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #374151; cursor: pointer;">
-                            <input type="checkbox" class="assign-group-checkbox" value="${g.id}" style="width: 20px; height: 20px; cursor: pointer;">
+                        <label class="academic-card" style="display: flex; align-items: center; gap: 12px; cursor: pointer; margin-bottom: 8px;">
+                            <input type="checkbox" class="assign-group-checkbox" value="${g.id}" style="width: 18px; height: 18px; cursor: pointer;">
                             <div style="flex: 1;">
-                                <strong style="color: #f9fafb; font-size: 16px; display: block;">📚 ${g.name}</strong>
-                                <span style="color: #60a5fa; font-size: 13px; display: block;">Group ID: ${g.id}</span>
+                                <strong style="color: #f9fafb; font-size: 15px;">${g.name}</strong>
+                                <span style="color: #60a5fa; font-size: 12px; display: block;">Group ID: ${g.id}</span>
                                 <span style="color: #9ca3af; font-size: 12px; display: block;">Telegram ID: ${g.telegram_group_id}</span>
                             </div>
                         </label>
                     `;
                 });
             }
-
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <h2 style="color: #f9fafb;">📌 Assign Exam to Groups</h2>
-                    <button class="secondary-button" style="margin: 12px 0; padding: 8px 16px;" onclick="showSendExam()">← Back</button>
-                    <div style="margin-top: 16px;">
-                        <p style="color: #9ca3af; margin-bottom: 12px;">Select one or more groups:</p>
-                        <div id="assignGroupList">
-                            ${groupsHtml}
-                        </div>
-                        <button class="primary-button" style="padding: 14px; margin-top: 12px; width: 100%;" onclick="assignAndSendExamWithGroups(${examId})">📌 Assign & Send</button>
-                    </div>
+                    ${academicHeader('Assign Exam to Groups', 'showSendExam()')}
+                    <p style="color: #9ca3af; margin-bottom: 12px;">Select one or more groups:</p>
+                    ${groupsHtml}
+                    <button class="academic-primary-btn" style="margin-top: 16px; width: 100%;" onclick="assignAndSendExamWithGroups(${examId})">Assign & Send</button>
                     <div id="assignStatus" style="margin-top: 12px; color: #9ca3af; text-align: center;"></div>
                 </div>
             `;
         }
 
-        // ---------- Assign and Send Exam with Multiple Groups ----------
         async function assignAndSendExamWithGroups(examId) {
             const checkboxes = document.querySelectorAll('.assign-group-checkbox:checked');
             const groupIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
-
             if (groupIds.length === 0) {
                 document.getElementById('assignStatus').textContent = '⚠️ Please select at least one group.';
                 return;
             }
-
-            document.getElementById('assignStatus').textContent = 'Assigning exam to groups...';
-
+            document.getElementById('assignStatus').textContent = 'Assigning...';
             try {
                 const assignResponse = await fetch('/api/teacher/assign_exam', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        exam_id: examId,
-                        group_ids: groupIds
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ exam_id: examId, group_ids: groupIds })
                 });
                 const assignData = await assignResponse.json();
-
                 if (assignData.status !== 'success') {
-                    document.getElementById('assignStatus').textContent = '❌ ' + (assignData.message || 'Failed to assign exam.');
+                    document.getElementById('assignStatus').textContent = '❌ ' + (assignData.message || 'Failed.');
                     return;
                 }
-
-                document.getElementById('assignStatus').textContent = '✅ Assigned! Sending exam...';
-
+                document.getElementById('assignStatus').textContent = '✅ Assigned! Sending...';
                 const sendResponse = await fetch('/api/teacher/send_exam_by_exam_id', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        exam_id: examId,
-                        group_ids: groupIds
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ exam_id: examId, group_ids: groupIds })
                 });
                 const sendData = await sendResponse.json();
-
                 if (sendData.status === 'success') {
-                    document.getElementById('assignStatus').textContent = '✅ ' + (sendData.message || 'Exam sent successfully!');
+                    document.getElementById('assignStatus').textContent = '✅ ' + (sendData.message || 'Sent!');
                     setTimeout(() => showSendExam(), 2000);
                 } else {
-                    document.getElementById('assignStatus').textContent = '❌ ' + (sendData.message || 'Failed to send exam.');
+                    document.getElementById('assignStatus').textContent = '❌ ' + (sendData.message || 'Failed.');
                 }
-            } catch (error) {
-                document.getElementById('assignStatus').textContent = '❌ Error processing request.';
-            }
+            } catch (error) { document.getElementById('assignStatus').textContent = '❌ Error.'; }
         }
 
-        // ---------- Unassign Exam ----------
         async function unassignExam(examId) {
-            if (!confirm(`Are you sure you want to unassign exam ID ${examId}? Students will no longer be able to access it. Results will be preserved.`)) return;
-
+            if (!confirm(`Unassign exam ID ${examId}? Results are preserved.`)) return;
             try {
                 const response = await fetch('/api/teacher/unassign_exam', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
                     body: JSON.stringify({ exam_id: examId })
                 });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    alert('✅ Exam unassigned successfully. Results are preserved.');
-                    showSendExam();
-                } else {
-                    alert('❌ ' + (data.message || 'Failed to unassign exam.'));
-                }
-            } catch (error) {
-                alert('❌ Error unassigning exam.');
-            }
+                if (data.status === 'success') { alert('✅ Unassigned.'); showSendExam(); }
+                else { alert('❌ ' + (data.message || 'Failed.')); }
+            } catch (error) { alert('❌ Error.'); }
         }
 
-        // ---------- Send Exam by Exam ID (already assigned) ----------
         async function sendExamByExamId(examId) {
             let assignedGroupIds = [];
             try {
                 const assignData = await fetchAPI('/api/teacher/assignments');
-                const assigned = assignData.assignments.filter(a => a.exam_id === examId);
-                assignedGroupIds = assigned.map(a => a.group_id);
-            } catch (e) {
-                alert('❌ Could not find assigned groups.');
-                return;
-            }
-
-            if (assignedGroupIds.length === 0) {
-                alert('❌ This exam is not assigned to any group. Please assign it first.');
-                return;
-            }
-
+                assignedGroupIds = assignData.assignments.filter(a => a.exam_id === examId).map(a => a.group_id);
+            } catch (e) { alert('❌ Could not find groups.'); return; }
+            if (assignedGroupIds.length === 0) { alert('❌ Not assigned.'); return; }
             const statusDiv = document.createElement('div');
             statusDiv.style.cssText = 'margin-top: 12px; color: #9ca3af; text-align: center;';
             document.querySelector('.exam-card > div').appendChild(statusDiv);
-            statusDiv.textContent = 'Sending exam...';
-
+            statusDiv.textContent = 'Sending...';
             try {
                 const response = await fetch('/api/teacher/send_exam_by_exam_id', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
-                    body: JSON.stringify({
-                        exam_id: examId,
-                        group_ids: assignedGroupIds
-                    })
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ exam_id: examId, group_ids: assignedGroupIds })
                 });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    statusDiv.textContent = '✅ ' + (data.message || 'Exam sent successfully!');
-                } else {
-                    statusDiv.textContent = '❌ ' + (data.message || 'Failed to send exam.');
-                }
-            } catch (error) {
-                statusDiv.textContent = '❌ Error sending exam.';
-            }
+                statusDiv.textContent = data.status === 'success' ? '✅ ' + (data.message || 'Sent!') : '❌ ' + (data.message || 'Failed.');
+            } catch (error) { statusDiv.textContent = '❌ Error.'; }
         }
 
-        // ---------- Error ----------
         function showError(message) {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="text-align: center; padding: 40px 20px;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
-                    <h1 style="color: #fca5a5;">Error</h1>
-                    <p style="color: #9ca3af;">${message}</p>
-                    <button class="secondary-button" style="margin-top: 20px; padding: 12px 24px;" onclick="startApp()">🔄 Try Again</button>
+                    <h1 style="color: #fca5a5; font-size: 18px;">Error</h1>
+                    <p style="color: #9ca3af; font-size: 14px;">${message}</p>
+                    <button class="academic-primary-btn" style="margin-top: 20px;" onclick="startApp()">Try Again</button>
                 </div>
             `;
         }
 
-        // ---------- Load Exam ----------
+        // ---------- Load Exam (Student) ----------
         async function loadExam(examId) {
             try {
                 statusElement.textContent = 'Loading exam...';
-
                 const response = await fetch(`/api/exam/${examId}/questions`, {
                     method: 'GET',
-                    headers: {
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    }
+                    headers: { 'X-Telegram-Init-Data': telegram?.initData || '' }
                 });
-
                 if (!response.ok) {
                     let message = `HTTP Error ${response.status}`;
-                    try {
-                        const errorData = await response.json();
-                        if (errorData.message) message = errorData.message;
-                    } catch (e) {}
-                    showError('Server Error: ' + message);
-                    return;
+                    try { const errorData = await response.json(); if (errorData.message) message = errorData.message; } catch (e) {}
+                    showError('Server Error: ' + message); return;
                 }
-
                 const data = await response.json();
-
-                if (data.status !== 'success') {
-                    showError('API Error: ' + (data.message || 'Unknown error'));
-                    return;
-                }
-
-                if (!data.exam) {
-                    showError('Exam data is missing in response.');
-                    return;
-                }
-
+                if (data.status !== 'success') { showError('API Error: ' + (data.message || 'Unknown')); return; }
+                if (!data.exam) { showError('Exam data missing.'); return; }
                 exam = data.exam;
                 questions = data.questions || [];
-
-                if (questions.length === 0) {
-                    showError('This exam has no questions.');
-                    return;
-                }
-
+                if (questions.length === 0) { showError('No questions.'); return; }
                 startedAt = new Date().toISOString();
                 examTitleElement.textContent = exam.title;
                 remainingSeconds = Number(exam.time_limit) * 60;
@@ -1096,35 +848,25 @@
                 currentQuestionIndex = 0;
                 renderCurrentQuestion();
                 statusElement.textContent = '';
-
-            } catch (error) {
-                showError('Unexpected Error: ' + error.message);
-            }
+            } catch (error) { showError('Unexpected Error: ' + error.message); }
         }
 
-        // ---------- Render Current Question ----------
         function renderCurrentQuestion() {
             if (!questions.length) return;
-
             const question = questions[currentQuestionIndex];
             const questionNumber = currentQuestionIndex + 1;
             const totalQuestions = questions.length;
-
             questionProgressElement.textContent = `Question ${questionNumber} of ${totalQuestions}`;
             progressFillElement.style.width = `${(questionNumber / totalQuestions) * 100}%`;
-
             questionContainer.innerHTML = '';
-
             const numberEl = document.createElement('div');
             numberEl.className = 'question-number';
             numberEl.textContent = `Question ${questionNumber}`;
             questionContainer.appendChild(numberEl);
-
             const textEl = document.createElement('h2');
             textEl.className = 'question-text';
             textEl.textContent = question.question_text;
             questionContainer.appendChild(textEl);
-
             if (question.audio_url) {
                 const audioEl = document.createElement('audio');
                 audioEl.controls = true;
@@ -1135,53 +877,37 @@
                 audioEl.appendChild(source);
                 questionContainer.appendChild(audioEl);
             }
-
             const optionsContainer = document.createElement('div');
             optionsContainer.className = 'options-container';
-
-            const optionKeys = ['A', 'B', 'C', 'D'].filter(key => {
-                return question.options[key] && question.options[key].trim() !== '';
-            });
-
+            const optionKeys = ['A', 'B', 'C', 'D'].filter(key => question.options[key] && question.options[key].trim() !== '');
             optionKeys.forEach(key => {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'option-button';
                 btn.dataset.option = key;
-
                 const letter = document.createElement('span');
                 letter.className = 'option-letter';
                 letter.textContent = key;
-
                 const text = document.createElement('span');
                 text.className = 'option-text';
                 text.textContent = question.options[key];
-
                 btn.appendChild(letter);
                 btn.appendChild(text);
-
-                if (studentAnswers[question.id] === key) {
-                    btn.classList.add('selected');
-                }
-
+                if (studentAnswers[question.id] === key) btn.classList.add('selected');
                 btn.addEventListener('click', () => selectAnswer(question.id, key));
                 optionsContainer.appendChild(btn);
             });
-
             questionContainer.appendChild(optionsContainer);
             updateNavigationButtons();
         }
 
-        // ---------- Select Answer ----------
         function selectAnswer(questionId, optionKey) {
             studentAnswers[questionId] = optionKey;
             renderCurrentQuestion();
         }
 
-        // ---------- Navigation ----------
         function updateNavigationButtons() {
             previousButton.disabled = currentQuestionIndex === 0 || isSubmitting;
-
             if (currentQuestionIndex === questions.length - 1) {
                 nextButton.textContent = 'Submit Exam';
             } else {
@@ -1190,15 +916,12 @@
             nextButton.disabled = isSubmitting;
         }
 
-        // ---------- Timer ----------
         function startTimer() {
             if (timerInterval) clearInterval(timerInterval);
             updateTimerDisplay();
-
             timerInterval = setInterval(() => {
                 remainingSeconds--;
                 updateTimerDisplay();
-
                 if (remainingSeconds <= 0) {
                     clearInterval(timerInterval);
                     timerInterval = null;
@@ -1213,111 +936,68 @@
         function updateTimerDisplay() {
             const minutes = Math.floor(remainingSeconds / 60);
             const seconds = remainingSeconds % 60;
-            timerElement.textContent =
-                `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-            if (remainingSeconds <= 60) {
-                timerElement.classList.add('timer-warning');
-            } else {
-                timerElement.classList.remove('timer-warning');
-            }
+            timerElement.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            if (remainingSeconds <= 60) timerElement.classList.add('timer-warning');
+            else timerElement.classList.remove('timer-warning');
         }
 
-        // ---------- Submit Exam ----------
         async function submitExam() {
             if (isSubmitting) return;
-
-            const confirmed = confirm('Are you sure you want to submit the exam?');
+            const confirmed = confirm('Are you sure you want to submit?');
             if (!confirmed) return;
-
             isSubmitting = true;
             updateNavigationButtons();
-            statusElement.textContent = 'Submitting exam...';
-
+            statusElement.textContent = 'Submitting...';
             try {
-                const payload = {
-                    exam_id: Number(examId),
-                    answers: studentAnswers,
-                    started_at: startedAt
-                };
-
+                const payload = { exam_id: Number(examId), answers: studentAnswers, started_at: startedAt };
                 const response = await fetch('/api/exam/submit', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': telegram?.initData || ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
                     body: JSON.stringify(payload)
                 });
-
                 if (!response.ok) {
-                    let message = `Submission failed (HTTP ${response.status})`;
-                    try {
-                        const errorData = await response.json();
-                        if (errorData.message) message = errorData.message;
-                    } catch (e) {}
+                    let message = `Failed (HTTP ${response.status})`;
+                    try { const errorData = await response.json(); if (errorData.message) message = errorData.message; } catch (e) {}
                     throw new Error(message);
                 }
-
                 const data = await response.json();
-                if (data.status !== 'success') {
-                    throw new Error(data.message || 'Submission failed.');
-                }
-
-                if (timerInterval) {
-                    clearInterval(timerInterval);
-                    timerInterval = null;
-                }
-
+                if (data.status !== 'success') throw new Error(data.message || 'Failed.');
+                if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
                 showResult(data.result);
-
             } catch (error) {
                 isSubmitting = false;
                 updateNavigationButtons();
-                statusElement.textContent = error.message || 'Could not submit the exam.';
+                statusElement.textContent = error.message || 'Could not submit.';
             }
         }
 
-        // ---------- Show Result ----------
         function showResult(result) {
             const score = result.score;
             const total = result.total_questions;
             const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
-
             examTitleElement.textContent = 'Exam Completed';
             questionProgressElement.textContent = 'Result';
             progressFillElement.style.width = '100%';
-
             questionContainer.innerHTML = '';
-
             const box = document.createElement('div');
             box.className = 'result-box';
-
             const title = document.createElement('h2');
             title.textContent = 'Your Result';
-
             const scoreEl = document.createElement('div');
             scoreEl.className = 'result-score';
             scoreEl.textContent = `${score} / ${total}`;
-
             const percentEl = document.createElement('div');
             percentEl.className = 'result-percentage';
             percentEl.textContent = `${percentage}%`;
-
             box.appendChild(title);
             box.appendChild(scoreEl);
             box.appendChild(percentEl);
             questionContainer.appendChild(box);
-
             previousButton.style.display = 'none';
             nextButton.style.display = 'none';
             timerElement.textContent = 'DONE';
-            statusElement.textContent = 'Your exam has been submitted successfully.';
+            statusElement.textContent = 'Exam submitted successfully.';
         }
-
-        // ============================================================
-        // EVENT LISTENERS
-        // ============================================================
 
         previousButton.addEventListener('click', () => {
             if (currentQuestionIndex > 0 && !isSubmitting) {
@@ -1328,13 +1008,11 @@
 
         nextButton.addEventListener('click', async () => {
             if (isSubmitting) return;
-
             if (currentQuestionIndex < questions.length - 1) {
                 currentQuestionIndex++;
                 renderCurrentQuestion();
                 return;
             }
-
             await submitExam();
         });
 
@@ -1345,37 +1023,19 @@
         async function startApp() {
             try {
                 const userData = await fetchAPI('/api/me');
-                if (userData.status !== 'success') {
-                    showError(userData.message || 'Authentication failed.');
-                    return;
-                }
+                if (userData.status !== 'success') { showError(userData.message || 'Auth failed.'); return; }
                 USER_DATA = userData;
-
                 if (userData.is_teacher) {
                     renderDashboard(userData);
                 } else {
                     const startParam = telegram?.initDataUnsafe?.start_param || null;
                     examId = null;
-                    if (startParam && startParam.startsWith('exam_')) {
-                        examId = startParam.substring(5);
-                    }
-
-                    if (!examId) {
-                        showError('Exam ID was not received from Telegram.');
-                        return;
-                    }
-
+                    if (startParam && startParam.startsWith('exam_')) examId = startParam.substring(5);
+                    if (!examId) { showError('Exam ID not received.'); return; }
                     await loadExam(examId);
                 }
-            } catch (error) {
-                console.error('App error:', error);
-                showError('Unable to start the application.');
-            }
+            } catch (error) { showError('Unable to start.'); }
         }
-
-        // ============================================================
-        // START
-        // ============================================================
 
         startApp();
     </script>
