@@ -87,6 +87,7 @@
         let isSubmitting = false;
         let examId = null;
         let allGroups = [];
+        let currentStudentId = null;
 
         // ============================================================
         // TELEGRAM USER
@@ -125,10 +126,21 @@
         }
 
         // ============================================================
+        // ACADEMIC PAGE HEADER
+        // ============================================================
+
+        function academicHeader(title, backAction) {
+            return `
+                <button class="academic-back-button" onclick="${backAction}">▸ Back</button>
+                <h2 class="academic-page-title">${title}</h2>
+            `;
+        }
+
+        // ============================================================
         // RENDER FUNCTIONS
         // ============================================================
 
-        // ---------- Dashboard (آکادمیک) ----------
+        // ---------- Dashboard ----------
         function renderDashboard(userData) {
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 24px 20px;">
@@ -183,14 +195,6 @@
             `;
         }
 
-        // ---------- Academic Page Header ----------
-        function academicHeader(title, backAction) {
-            return `
-                <button class="academic-back-button" onclick="${backAction}">▸ Back</button>
-                <h2 class="academic-page-title">${title}</h2>
-            `;
-        }
-
         // ---------- Students List ----------
         async function loadStudents() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading students...</p></div>`;
@@ -232,8 +236,9 @@
             }
         }
 
-        // ---------- Show Student Profile ----------
+        // ---------- Show Student Profile (با Attendance) ----------
         async function showStudentProfile(studentId) {
+            currentStudentId = studentId;
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading profile...</p></div>`;
             try {
                 const data = await fetchAPI(`/api/teacher/student/${studentId}`);
@@ -253,7 +258,7 @@
                             <p style="color: #60a5fa; font-size: 13px; margin: 4px 0;">Group ID: ${s.group_id} | ${s.group_name}</p>
                         </div>
                         
-                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Archived Results (${data.total})</h3>
+                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Archived Results (${data.total_results})</h3>
                 `;
 
                 if (data.results.length === 0) {
@@ -278,10 +283,161 @@
                     });
                 }
 
-                html += `</div>`;
+                // بخش Attendance
+                html += `
+                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Attendance (${data.total_attendance})</h3>
+                `;
+
+                if (data.attendance.length === 0) {
+                    html += `<p style="color: #9ca3af; text-align: center; padding: 20px;">No sessions recorded yet.</p>`;
+                } else {
+                    data.attendance.forEach(a => {
+                        if (a.is_makeup) {
+                            html += `
+                                <div class="academic-card">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong style="color: #fbbf24;">Make-up session</strong>
+                                            <span style="color: #9ca3af; font-size: 12px; display: block;">${a.created_at || 'N/A'}</span>
+                                        </div>
+                                        <div>
+                                            <button class="academic-icon-btn warning" onclick="toggleMakeup(${a.id}, ${studentId})" title="Convert to Regular">🔄</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            const minutesText = a.extra_minutes > 0 ? `+${a.extra_minutes} min` : '';
+                            html += `
+                                <div class="academic-card">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong style="color: #f9fafb;">Session ${a.session_number}${minutesText ? ' ' + minutesText : ''}</strong>
+                                            <span style="color: #9ca3af; font-size: 12px; display: block;">${a.created_at || 'N/A'}</span>
+                                        </div>
+                                        <div>
+                                            <button class="academic-icon-btn primary" onclick="editMinutes(${a.id}, ${a.extra_minutes}, ${studentId})" title="Add/Edit Minutes">✏️</button>
+                                            <button class="academic-icon-btn warning" onclick="toggleMakeup(${a.id}, ${studentId})" title="Convert to Make-up">🔄</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+                }
+
+                // دکمه Record New Session
+                html += `
+                        <button class="academic-primary-btn" style="width: 100%; margin-top: 16px;" onclick="recordSession(${studentId}, ${data.total_attendance})">➕ Record New Session</button>
+                    </div>
+                `;
+
                 document.querySelector('.exam-card').innerHTML = html;
             } catch (error) {
                 showError('Error loading student profile.');
+            }
+        }
+
+        // ---------- Record Session ----------
+        async function recordSession(studentId, totalAttendance) {
+            // بررسی آیا اولین جلسه است
+            if (totalAttendance === 0) {
+                const firstSession = prompt('This is the first session. What is the session number?', '1');
+                if (firstSession === null) return;
+                const sessionNumber = parseInt(firstSession);
+                if (isNaN(sessionNumber) || sessionNumber <= 0) {
+                    alert('⚠️ Please enter a valid session number.');
+                    return;
+                }
+                await addAttendance(studentId, sessionNumber);
+            } else {
+                await addAttendance(studentId, null);
+            }
+        }
+
+        // ---------- Add Attendance API ----------
+        async function addAttendance(studentId, sessionNumber) {
+            try {
+                const response = await fetch('/api/teacher/attendance', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        student_id: studentId,
+                        session_number: sessionNumber
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showStudentProfile(studentId);
+                } else if (data.need_first_session) {
+                    const firstSession = prompt('This is the first session. What is the session number?', '1');
+                    if (firstSession === null) return;
+                    const sn = parseInt(firstSession);
+                    if (isNaN(sn) || sn <= 0) {
+                        alert('⚠️ Please enter a valid session number.');
+                        return;
+                    }
+                    await addAttendance(studentId, sn);
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to record session.'));
+                }
+            } catch (error) {
+                alert('❌ Error recording session.');
+            }
+        }
+
+        // ---------- Edit Minutes ----------
+        async function editMinutes(attendanceId, currentMinutes, studentId) {
+            const input = prompt('Add/Edit extra minutes (e.g. 5)', currentMinutes || '0');
+            if (input === null) return;
+            const minutes = parseInt(input);
+            if (isNaN(minutes) || minutes < 0) {
+                alert('⚠️ Please enter a valid number.');
+                return;
+            }
+            try {
+                const response = await fetch(`/api/teacher/attendance/${attendanceId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ extra_minutes: minutes })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showStudentProfile(studentId);
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to update minutes.'));
+                }
+            } catch (error) {
+                alert('❌ Error updating minutes.');
+            }
+        }
+
+        // ---------- Toggle Make-up ----------
+        async function toggleMakeup(attendanceId, studentId) {
+            if (!confirm('Convert this session to Make-up / Regular?')) return;
+            try {
+                const response = await fetch(`/api/teacher/attendance/${attendanceId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ toggle_makeup: true })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showStudentProfile(studentId);
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to toggle.'));
+                }
+            } catch (error) {
+                alert('❌ Error toggling.');
             }
         }
 

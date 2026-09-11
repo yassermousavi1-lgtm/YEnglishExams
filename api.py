@@ -39,6 +39,21 @@ def get_database_connection():
         connection.commit()
     except:
         pass
+    try:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS attendance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                session_number INTEGER NOT NULL,
+                extra_minutes INTEGER DEFAULT 0,
+                is_makeup BOOLEAN DEFAULT 0,
+                created_at TEXT,
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except:
+        pass
     return connection
 
 
@@ -115,7 +130,6 @@ def has_student_taken_exam(student_id, exam_id, connection):
 
 def send_result_to_teacher(student, exam, score, total_questions, completed_at):
     if not TELEGRAM_BOT_TOKEN or not TEACHER_TELEGRAM_ID:
-        print("Teacher notification skipped.")
         return False
     first_name = (student["first_name"] or "").strip()
     last_name = (student["last_name"] or "").strip()
@@ -136,7 +150,6 @@ def send_result_to_teacher(student, exam, score, total_questions, completed_at):
     try:
         response = requests.post(telegram_url, json=payload, timeout=10)
         if response.ok and response.json().get("ok"):
-            print("Teacher notification sent.")
             return True
         return False
     except Exception as error:
@@ -490,6 +503,23 @@ def teacher_get_student_profile(student_id):
                 "score": r["score"], "total_questions": r["total_questions"],
                 "percentage": percentage, "completed_at": r["completed_at"]
             })
+        # دریافت لیست حضور و غیاب
+        cursor.execute("""
+            SELECT id, session_number, extra_minutes, is_makeup, created_at
+            FROM attendance
+            WHERE student_id = ?
+            ORDER BY session_number DESC, created_at DESC
+        """, (student_id,))
+        attendance = cursor.fetchall()
+        attendance_list = []
+        for a in attendance:
+            attendance_list.append({
+                "id": a["id"],
+                "session_number": a["session_number"],
+                "extra_minutes": a["extra_minutes"],
+                "is_makeup": bool(a["is_makeup"]),
+                "created_at": a["created_at"]
+            })
         return jsonify({
             "status": "success",
             "student": {
@@ -499,11 +529,125 @@ def teacher_get_student_profile(student_id):
                 "group_name": student["group_name"], "telegram_group_id": student["telegram_group_id"]
             },
             "results": result_list,
-            "total": len(result_list)
+            "total_results": len(result_list),
+            "attendance": attendance_list,
+            "total_attendance": len(attendance_list)
         })
     finally:
         connection.close()
 
+
+# ============================================================
+# ATTENDANCE ENDPOINTS
+# ============================================================
+
+@app.route("/api/teacher/attendance", methods=["POST"])
+def teacher_add_attendance():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    student_id = data.get("student_id")
+    session_number = data.get("session_number")
+    if not student_id:
+        return jsonify({"status": "error", "message": "student_id is required."}), 400
+    
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        # اگر شماره جلسه ارسال نشده، خودکار محاسبه کن
+        if session_number is None:
+            # آخرین جلسه غیر Make-up را پیدا کن
+            cursor.execute("""
+                SELECT MAX(session_number) as max_session
+                FROM attendance
+                WHERE student_id = ? AND is_makeup = 0
+            """, (student_id,))
+            row = cursor.fetchone()
+            if row and row["max_session"]:
+                session_number = row["max_session"] + 1
+            else:
+                return jsonify({"status": "error", "message": "First session number is required.", "need_first_session": True}), 400
+        
+        created_at = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=3, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
+        
+        cursor.execute("""
+            INSERT INTO attendance (student_id, session_number, extra_minutes, is_makeup, created_at)
+            VALUES (?, ?, 0, 0, ?)
+        """, (student_id, session_number, created_at))
+        connection.commit()
+        attendance_id = cursor.lastrowid
+        
+        return jsonify({
+            "status": "success",
+            "message": "Session recorded successfully.",
+            "attendance": {
+                "id": attendance_id,
+                "session_number": session_number,
+                "extra_minutes": 0,
+                "is_makeup": False,
+                "created_at": created_at
+            }
+        })
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/attendance/<int:attendance_id>", methods=["PUT"])
+def teacher_update_attendance(attendance_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        # بررسی وجود رکورد
+        cursor.execute("SELECT id FROM attendance WHERE id = ?", (attendance_id,))
+        if not cursor.fetchone():
+            return jsonify({"status": "error", "message": "Attendance not found."}), 404
+        
+        # به‌روزرسانی دقیقه اضافه
+        if "extra_minutes" in data:
+            cursor.execute("UPDATE attendance SET extra_minutes = ? WHERE id = ?", (data["extra_minutes"], attendance_id))
+        
+        # به‌روزرسانی Make-up
+        if "is_makeup" in data:
+            cursor.execute("UPDATE attendance SET is_makeup = ? WHERE id = ?", (1 if data["is_makeup"] else 0, attendance_id))
+		        # Toggle Make-up (تبدیل خودکار)
+        if "toggle_makeup" in data:
+            cursor.execute("SELECT is_makeup FROM attendance WHERE id = ?", (attendance_id,))
+            current = cursor.fetchone()
+            if current:
+                new_value = 0 if current["is_makeup"] else 1
+                cursor.execute("UPDATE attendance SET is_makeup = ? WHERE id = ?", (new_value, attendance_id))
+        
+        connection.commit()
+        return jsonify({"status": "success", "message": "Attendance updated successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+# ============================================================
+# OTHER TEACHER ENDPOINTS
+# ============================================================
 
 @app.route("/api/teacher/groups")
 def teacher_get_groups():
@@ -858,9 +1002,6 @@ def teacher_create_exam_with_questions():
         return jsonify({"status": "error", "message": str(error)}), 400
     except Exception as error:
         connection.rollback()
-        print("CREATE EXAM ERROR:", error)
-        import traceback
-        traceback.print_exc()
         return jsonify({"status": "error", "message": "An internal server error occurred."}), 500
     finally:
         connection.close()
