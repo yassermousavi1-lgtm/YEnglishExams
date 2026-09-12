@@ -12,7 +12,7 @@
 <body>
 
     <main class="app-container">
-        <section class="exam-card">
+        <section class="exam-card" id="mainCard">
 
             <header class="exam-header">
                 <div class="exam-title-section">
@@ -62,6 +62,7 @@
         // DOM REFERENCE
         // ============================================================
 
+        const mainCard = document.getElementById('mainCard');
         const examTitleElement = document.getElementById('examTitle');
         const welcomeTextElement = document.getElementById('welcomeText');
         const timerElement = document.getElementById('timer');
@@ -88,6 +89,7 @@
         let examId = null;
         let allGroups = [];
         let currentStudentId = null;
+        let isPreviewMode = false;
 
         // ============================================================
         // TELEGRAM USER
@@ -126,7 +128,7 @@
         }
 
         // ============================================================
-        // ACADEMIC PAGE HEADER
+        // ACADEMIC HEADER
         // ============================================================
 
         function academicHeader(title, backAction) {
@@ -137,7 +139,7 @@
         }
 
         // ============================================================
-        // RENDER FUNCTIONS
+        // RENDER FUNCTIONS (TEACHER)
         // ============================================================
 
         // ---------- Dashboard ----------
@@ -236,7 +238,7 @@
             }
         }
 
-        // ---------- Show Student Profile (با Attendance) ----------
+        // ---------- Show Student Profile ----------
         async function showStudentProfile(studentId) {
             currentStudentId = studentId;
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading profile...</p></div>`;
@@ -283,7 +285,6 @@
                     });
                 }
 
-                // بخش Attendance
                 html += `
                         <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Attendance (${data.total_attendance})</h3>
                 `;
@@ -326,7 +327,6 @@
                     });
                 }
 
-                // دکمه Record New Session
                 html += `
                         <button class="academic-primary-btn" style="width: 100%; margin-top: 16px;" onclick="recordSession(${studentId}, ${data.total_attendance})">➕ Record New Session</button>
                     </div>
@@ -340,7 +340,6 @@
 
         // ---------- Record Session ----------
         async function recordSession(studentId, totalAttendance) {
-            // بررسی آیا اولین جلسه است
             if (totalAttendance === 0) {
                 const firstSession = prompt('This is the first session. What is the session number?', '1');
                 if (firstSession === null) return;
@@ -443,7 +442,7 @@
 
         // ---------- Delete Student ----------
         async function deleteStudent(studentId) {
-            if (!confirm(`Are you sure you want to delete this student? This action cannot be undone.`)) return;
+            if (!confirm(`Are you sure you want to delete this student?`)) return;
             try {
                 const response = await fetch('/api/teacher/students', {
                     method: 'DELETE',
@@ -462,7 +461,7 @@
             }
         }
 
-        // ---------- Exams List ----------
+        // ---------- Exams List (با Preview) ----------
         async function loadExams() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
             try {
@@ -499,6 +498,7 @@
                                             <span style="color: #9ca3af; font-size: 13px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
                                         </div>
                                         <div>
+                                            <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
                                             <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
                                             <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
                                         </div>
@@ -514,6 +514,143 @@
             } catch (error) {
                 showError('Error loading exams.');
             }
+        }
+
+        // ---------- Preview Exam ----------
+        async function previewExam(examId) {
+            isPreviewMode = true;
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading preview...</p></div>`;
+            try {
+                const response = await fetch(`/api/teacher/preview_exam/${examId}`, {
+                    method: 'GET',
+                    headers: { 'X-Telegram-Init-Data': telegram?.initData || '' }
+                });
+                if (!response.ok) {
+                    showError('Failed to load preview.');
+                    return;
+                }
+                const data = await response.json();
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load preview.');
+                    return;
+                }
+                exam = data.exam;
+                questions = data.questions || [];
+                if (questions.length === 0) {
+                    showError('This exam has no questions.');
+                    return;
+                }
+                currentQuestionIndex = 0;
+                studentAnswers = {};
+                examId = data.exam.id;
+                renderPreview();
+            } catch (error) {
+                showError('Error loading preview.');
+            }
+        }
+
+        // ---------- Render Preview (Academic) ----------
+        function renderPreview() {
+            const totalQuestions = questions.length;
+            const questionNumber = currentQuestionIndex + 1;
+            const question = questions[currentQuestionIndex];
+
+            let optionsHtml = '';
+            const optionKeys = ['A', 'B', 'C', 'D'].filter(key => question.options[key] && question.options[key].trim() !== '');
+            optionKeys.forEach(key => {
+                const selected = studentAnswers[question.id] === key ? 'selected' : '';
+                optionsHtml += `
+                    <button class="academic-option-button ${selected}" onclick="selectPreviewAnswer(${question.id}, '${key}')">
+                        <span class="academic-option-letter">${key}</span>
+                        <span class="academic-option-text">${question.options[key]}</span>
+                    </button>
+                `;
+            });
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 0;">
+                    <div class="preview-banner">
+                        <span>⚠️ Preview Mode - Results will NOT be saved</span>
+                        <button class="preview-exit-btn" onclick="exitPreview()">Exit Preview</button>
+                    </div>
+                    
+                    <div style="padding: 24px 20px;">
+                        <div style="text-align: center; margin-bottom: 24px;">
+                            <h1 style="color: #f9fafb; font-size: 20px; font-weight: 600; margin: 0;">YEnglish Exams</h1>
+                            <p style="color: #9ca3af; font-size: 14px; margin: 4px 0 0 0;">${exam.title}</p>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <span style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Question ${questionNumber} of ${totalQuestions}</span>
+                            <span class="academic-timer" style="color: #f9fafb; font-size: 14px; font-weight: 600;">${exam.time_limit} min</span>
+                        </div>
+
+                        <div class="academic-progress-bar" style="margin-bottom: 24px;">
+                            <div class="academic-progress-fill" style="width: ${(questionNumber / totalQuestions) * 100}%;"></div>
+                        </div>
+
+                        <h2 class="academic-question-text">${question.question_text}</h2>
+
+                        <div class="academic-options-container">
+                            ${optionsHtml}
+                        </div>
+
+                        <div style="display: flex; gap: 12px; margin-top: 24px;">
+                            <button class="academic-secondary-btn" style="flex: 1;" onclick="previewPrevious()" ${currentQuestionIndex === 0 ? 'disabled' : ''}>▸ Previous</button>
+                            <button class="academic-primary-btn" style="flex: 1;" onclick="previewNext()">
+                                ${currentQuestionIndex === totalQuestions - 1 ? 'Finish Preview' : 'Next ▸'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function selectPreviewAnswer(questionId, optionKey) {
+            studentAnswers[questionId] = optionKey;
+            renderPreview();
+        }
+
+        function previewPrevious() {
+            if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                renderPreview();
+            }
+        }
+
+        function previewNext() {
+            if (currentQuestionIndex < questions.length - 1) {
+                currentQuestionIndex++;
+                renderPreview();
+            } else {
+                renderPreviewResult();
+            }
+        }
+
+        function renderPreviewResult() {
+            const total = questions.length;
+            const answered = Object.keys(studentAnswers).length;
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 0;">
+                    <div class="preview-banner">
+                        <span>⚠️ Preview Mode - Results will NOT be saved</span>
+                        <button class="preview-exit-btn" onclick="exitPreview()">Exit Preview</button>
+                    </div>
+                    
+                    <div style="padding: 40px 24px; text-align: center;">
+                        <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
+                        <h1 style="color: #60a5fa; font-size: 24px; font-weight: 700; margin: 0 0 16px 0;">Preview Completed!</h1>
+                        <p style="color: #9ca3af; font-size: 14px; margin: 0;">You answered ${answered} out of ${total} questions.</p>
+                        <p style="color: #6b7280; font-size: 13px; margin: 16px 0;">(No results were saved)</p>
+                        <button class="academic-primary-btn" style="margin-top: 24px;" onclick="exitPreview()">Exit Preview</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function exitPreview() {
+            isPreviewMode = false;
+            loadExams();
         }
 
         // ---------- Show Edit Exam ----------
@@ -633,7 +770,7 @@
 
         // ---------- Unarchive Result ----------
         async function unarchiveResult(resultId, studentId) {
-            if (!confirm(`Unarchive this result? It will return to the Results list.`)) return;
+            if (!confirm(`Unarchive this result?`)) return;
             try {
                 const response = await fetch('/api/teacher/unarchive_result', {
                     method: 'POST',
@@ -978,8 +1115,11 @@
             `;
         }
 
-        // ---------- Load Exam (Student) ----------
-        async function loadExam(examId) {
+        // ============================================================
+        // STUDENT EXAM (Academic Design)
+        // ============================================================
+
+        async function loadStudentExam(examId) {
             try {
                 statusElement.textContent = 'Loading exam...';
                 const response = await fetch(`/api/exam/${examId}/questions`, {
@@ -998,112 +1138,113 @@
                 questions = data.questions || [];
                 if (questions.length === 0) { showError('No questions.'); return; }
                 startedAt = new Date().toISOString();
-                examTitleElement.textContent = exam.title;
+                currentQuestionIndex = 0;
                 remainingSeconds = Number(exam.time_limit) * 60;
                 startTimer();
-                currentQuestionIndex = 0;
-                renderCurrentQuestion();
-                statusElement.textContent = '';
+                renderStudentQuestion();
             } catch (error) { showError('Unexpected Error: ' + error.message); }
         }
 
-        function renderCurrentQuestion() {
-            if (!questions.length) return;
-            const question = questions[currentQuestionIndex];
-            const questionNumber = currentQuestionIndex + 1;
+        function renderStudentQuestion() {
             const totalQuestions = questions.length;
-            questionProgressElement.textContent = `Question ${questionNumber} of ${totalQuestions}`;
-            progressFillElement.style.width = `${(questionNumber / totalQuestions) * 100}%`;
-            questionContainer.innerHTML = '';
-            const numberEl = document.createElement('div');
-            numberEl.className = 'question-number';
-            numberEl.textContent = `Question ${questionNumber}`;
-            questionContainer.appendChild(numberEl);
-            const textEl = document.createElement('h2');
-            textEl.className = 'question-text';
-            textEl.textContent = question.question_text;
-            questionContainer.appendChild(textEl);
-            if (question.audio_url) {
-                const audioEl = document.createElement('audio');
-                audioEl.controls = true;
-                audioEl.style.cssText = 'width: 100%; margin: 12px 0;';
-                const source = document.createElement('source');
-                source.src = question.audio_url;
-                source.type = 'audio/mpeg';
-                audioEl.appendChild(source);
-                questionContainer.appendChild(audioEl);
-            }
-            const optionsContainer = document.createElement('div');
-            optionsContainer.className = 'options-container';
+            const questionNumber = currentQuestionIndex + 1;
+            const question = questions[currentQuestionIndex];
+
+            let optionsHtml = '';
             const optionKeys = ['A', 'B', 'C', 'D'].filter(key => question.options[key] && question.options[key].trim() !== '');
             optionKeys.forEach(key => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'option-button';
-                btn.dataset.option = key;
-                const letter = document.createElement('span');
-                letter.className = 'option-letter';
-                letter.textContent = key;
-                const text = document.createElement('span');
-                text.className = 'option-text';
-                text.textContent = question.options[key];
-                btn.appendChild(letter);
-                btn.appendChild(text);
-                if (studentAnswers[question.id] === key) btn.classList.add('selected');
-                btn.addEventListener('click', () => selectAnswer(question.id, key));
-                optionsContainer.appendChild(btn);
+                const selected = studentAnswers[question.id] === key ? 'selected' : '';
+                optionsHtml += `
+                    <button class="academic-option-button ${selected}" onclick="selectStudentAnswer(${question.id}, '${key}')">
+                        <span class="academic-option-letter">${key}</span>
+                        <span class="academic-option-text">${question.options[key]}</span>
+                    </button>
+                `;
             });
-            questionContainer.appendChild(optionsContainer);
-            updateNavigationButtons();
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 24px 20px;">
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <h1 style="color: #f9fafb; font-size: 20px; font-weight: 600; margin: 0;">YEnglish Exams</h1>
+                        <p style="color: #9ca3af; font-size: 14px; margin: 4px 0 0 0;">${exam.title}</p>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <span style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Question ${questionNumber} of ${totalQuestions}</span>
+                        <span class="academic-timer" id="academicTimer" style="color: #f9fafb; font-size: 14px; font-weight: 600;">${formatTime(remainingSeconds)}</span>
+                    </div>
+
+                    <div class="academic-progress-bar" style="margin-bottom: 24px;">
+                        <div class="academic-progress-fill" style="width: ${(questionNumber / totalQuestions) * 100}%;"></div>
+                    </div>
+
+                    <h2 class="academic-question-text">${question.question_text}</h2>
+
+                    <div class="academic-options-container">
+                        ${optionsHtml}
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 24px;">
+                        <button class="academic-secondary-btn" style="flex: 1;" onclick="studentPrevious()" ${currentQuestionIndex === 0 ? 'disabled' : ''}>▸ Previous</button>
+                        <button class="academic-primary-btn" style="flex: 1;" onclick="studentNext()">
+                            ${currentQuestionIndex === totalQuestions - 1 ? 'Submit Exam' : 'Next ▸'}
+                        </button>
+                    </div>
+
+                    <div id="examStatus" style="margin-top: 16px; color: #9ca3af; text-align: center; font-size: 13px;"></div>
+                </div>
+            `;
         }
 
-        function selectAnswer(questionId, optionKey) {
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function selectStudentAnswer(questionId, optionKey) {
             studentAnswers[questionId] = optionKey;
-            renderCurrentQuestion();
+            renderStudentQuestion();
         }
 
-        function updateNavigationButtons() {
-            previousButton.disabled = currentQuestionIndex === 0 || isSubmitting;
-            if (currentQuestionIndex === questions.length - 1) {
-                nextButton.textContent = 'Submit Exam';
-            } else {
-                nextButton.textContent = 'Next →';
+        function studentPrevious() {
+            if (currentQuestionIndex > 0 && !isSubmitting) {
+                currentQuestionIndex--;
+                renderStudentQuestion();
             }
-            nextButton.disabled = isSubmitting;
+        }
+
+        async function studentNext() {
+            if (isSubmitting) return;
+            if (currentQuestionIndex < questions.length - 1) {
+                currentQuestionIndex++;
+                renderStudentQuestion();
+                return;
+            }
+            await submitStudentExam();
         }
 
         function startTimer() {
             if (timerInterval) clearInterval(timerInterval);
-            updateTimerDisplay();
             timerInterval = setInterval(() => {
                 remainingSeconds--;
-                updateTimerDisplay();
+                const timerEl = document.getElementById('academicTimer');
+                if (timerEl) timerEl.textContent = formatTime(remainingSeconds);
                 if (remainingSeconds <= 0) {
                     clearInterval(timerInterval);
                     timerInterval = null;
-                    timerElement.textContent = '00:00';
                     isSubmitting = true;
-                    updateNavigationButtons();
-                    statusElement.textContent = 'Time is up.';
                 }
             }, 1000);
         }
 
-        function updateTimerDisplay() {
-            const minutes = Math.floor(remainingSeconds / 60);
-            const seconds = remainingSeconds % 60;
-            timerElement.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-            if (remainingSeconds <= 60) timerElement.classList.add('timer-warning');
-            else timerElement.classList.remove('timer-warning');
-        }
-
-        async function submitExam() {
+        async function submitStudentExam() {
             if (isSubmitting) return;
             const confirmed = confirm('Are you sure you want to submit?');
             if (!confirmed) return;
             isSubmitting = true;
-            updateNavigationButtons();
-            statusElement.textContent = 'Submitting...';
+            const statusEl = document.getElementById('examStatus');
+            if (statusEl) statusEl.textContent = 'Submitting...';
             try {
                 const payload = { exam_id: Number(examId), answers: studentAnswers, started_at: startedAt };
                 const response = await fetch('/api/exam/submit', {
@@ -1119,58 +1260,27 @@
                 const data = await response.json();
                 if (data.status !== 'success') throw new Error(data.message || 'Failed.');
                 if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-                showResult(data.result);
+                renderStudentResult(data.result);
             } catch (error) {
                 isSubmitting = false;
-                updateNavigationButtons();
-                statusElement.textContent = error.message || 'Could not submit.';
+                if (statusEl) statusEl.textContent = error.message || 'Could not submit.';
             }
         }
 
-        function showResult(result) {
+        function renderStudentResult(result) {
             const score = result.score;
             const total = result.total_questions;
             const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
-            examTitleElement.textContent = 'Exam Completed';
-            questionProgressElement.textContent = 'Result';
-            progressFillElement.style.width = '100%';
-            questionContainer.innerHTML = '';
-            const box = document.createElement('div');
-            box.className = 'result-box';
-            const title = document.createElement('h2');
-            title.textContent = 'Your Result';
-            const scoreEl = document.createElement('div');
-            scoreEl.className = 'result-score';
-            scoreEl.textContent = `${score} / ${total}`;
-            const percentEl = document.createElement('div');
-            percentEl.className = 'result-percentage';
-            percentEl.textContent = `${percentage}%`;
-            box.appendChild(title);
-            box.appendChild(scoreEl);
-            box.appendChild(percentEl);
-            questionContainer.appendChild(box);
-            previousButton.style.display = 'none';
-            nextButton.style.display = 'none';
-            timerElement.textContent = 'DONE';
-            statusElement.textContent = 'Exam submitted successfully.';
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 40px 24px; text-align: center;">
+                    <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
+                    <h1 style="color: #60a5fa; font-size: 24px; font-weight: 700; margin: 0 0 24px 0;">Exam Completed</h1>
+                    <div class="academic-result-score" style="font-size: 56px; font-weight: 800; color: #f9fafb; margin: 16px 0;">${score} / ${total}</div>
+                    <div class="academic-result-percentage" style="font-size: 28px; font-weight: 700; color: #34d399; margin-top: 12px;">${percentage}%</div>
+                    <p style="color: #9ca3af; font-size: 14px; margin-top: 24px;">Your result has been saved and sent to the teacher.</p>
+                </div>
+            `;
         }
-
-        previousButton.addEventListener('click', () => {
-            if (currentQuestionIndex > 0 && !isSubmitting) {
-                currentQuestionIndex--;
-                renderCurrentQuestion();
-            }
-        });
-
-        nextButton.addEventListener('click', async () => {
-            if (isSubmitting) return;
-            if (currentQuestionIndex < questions.length - 1) {
-                currentQuestionIndex++;
-                renderCurrentQuestion();
-                return;
-            }
-            await submitExam();
-        });
 
         // ============================================================
         // MAIN APPLICATION
@@ -1188,7 +1298,7 @@
                     examId = null;
                     if (startParam && startParam.startsWith('exam_')) examId = startParam.substring(5);
                     if (!examId) { showError('Exam ID not received.'); return; }
-                    await loadExam(examId);
+                    await loadStudentExam(examId);
                 }
             } catch (error) { showError('Unable to start.'); }
         }

@@ -280,6 +280,52 @@ def get_exam_questions(exam_id):
         connection.close()
 
 
+@app.route("/api/teacher/preview_exam/<int:exam_id>")
+def teacher_preview_exam(exam_id):
+    """Preview exam for teacher (without saving results)."""
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT id, title, time_limit FROM exams WHERE id = ?", (exam_id,))
+        exam = cursor.fetchone()
+        if exam is None:
+            return jsonify({"status": "error", "message": "Exam not found."}), 404
+        cursor.execute("""
+            SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, eq.question_order
+            FROM exam_questions AS eq
+            INNER JOIN questions AS q ON q.id = eq.question_id
+            WHERE eq.exam_id = ?
+            ORDER BY eq.question_order ASC
+        """, (exam_id,))
+        questions = cursor.fetchall()
+        question_list = []
+        for question in questions:
+            options = {}
+            if question["option_a"]:
+                options["A"] = question["option_a"]
+            if question["option_b"]:
+                options["B"] = question["option_b"]
+            if question["option_c"]:
+                options["C"] = question["option_c"]
+            if question["option_d"]:
+                options["D"] = question["option_d"]
+            question_list.append({
+                "id": question["id"],
+                "question_text": question["question_text"],
+                "options": options,
+                "question_order": question["question_order"]
+            })
+        return jsonify({"status": "success", "exam": {"id": exam["id"], "title": exam["title"], "time_limit": exam["time_limit"]}, "questions": question_list, "total_questions": len(question_list)})
+    finally:
+        connection.close()
+
+
 @app.route("/api/exam/submit", methods=["POST"])
 def submit_exam():
     auth_result = get_authenticated_user()
@@ -503,7 +549,6 @@ def teacher_get_student_profile(student_id):
                 "score": r["score"], "total_questions": r["total_questions"],
                 "percentage": percentage, "completed_at": r["completed_at"]
             })
-        # دریافت لیست حضور و غیاب
         cursor.execute("""
             SELECT id, session_number, extra_minutes, is_makeup, created_at
             FROM attendance
@@ -560,9 +605,7 @@ def teacher_add_attendance():
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        # اگر شماره جلسه ارسال نشده، خودکار محاسبه کن
         if session_number is None:
-            # آخرین جلسه غیر Make-up را پیدا کن
             cursor.execute("""
                 SELECT MAX(session_number) as max_session
                 FROM attendance
@@ -616,19 +659,16 @@ def teacher_update_attendance(attendance_id):
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        # بررسی وجود رکورد
         cursor.execute("SELECT id FROM attendance WHERE id = ?", (attendance_id,))
         if not cursor.fetchone():
             return jsonify({"status": "error", "message": "Attendance not found."}), 404
         
-        # به‌روزرسانی دقیقه اضافه
         if "extra_minutes" in data:
             cursor.execute("UPDATE attendance SET extra_minutes = ? WHERE id = ?", (data["extra_minutes"], attendance_id))
         
-        # به‌روزرسانی Make-up
         if "is_makeup" in data:
             cursor.execute("UPDATE attendance SET is_makeup = ? WHERE id = ?", (1 if data["is_makeup"] else 0, attendance_id))
-		        # Toggle Make-up (تبدیل خودکار)
+        
         if "toggle_makeup" in data:
             cursor.execute("SELECT is_makeup FROM attendance WHERE id = ?", (attendance_id,))
             current = cursor.fetchone()
