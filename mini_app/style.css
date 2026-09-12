@@ -455,3 +455,51 @@ body {
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
+/* ============================================================
+   EXAM LIST CARD (Fixed Layout)
+   ============================================================ */
+
+.exam-list-card {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px;
+    padding: 14px 16px;
+    flex-wrap: nowrap !important;
+}
+
+.exam-card-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.exam-card-title {
+    display: block;
+    color: #f9fafb;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    margin-bottom: 4px;
+}
+
+.exam-card-meta {
+    display: block;
+    color: #9ca3af;
+    font-size: 13px;
+    line-height: 1.3;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.exam-card-actions {
+    flex-shrink: 0;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 2px;
+    white-space: nowrap;
+}

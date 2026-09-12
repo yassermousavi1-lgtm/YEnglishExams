@@ -489,19 +489,18 @@
                             <div style="margin-bottom: 20px;">
                                 <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">${cat}</h3>
                         `;
-                        grouped[cat].forEach(e => {
+                      
+			                        grouped[cat].forEach(e => {
                             html += `
-                                <div class="academic-card">
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <div>
-                                            <strong style="color: #f9fafb;">${e.title}</strong>
-                                            <span style="color: #9ca3af; font-size: 13px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                        </div>
-                                        <div>
-                                            <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
-                                            <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
-                                            <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
-                                        </div>
+                                <div class="academic-card exam-list-card">
+                                    <div class="exam-card-info">
+                                        <strong class="exam-card-title">${e.title}</strong>
+                                        <span class="exam-card-meta">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                    </div>
+                                    <div class="exam-card-actions">
+                                        <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
+                                        <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
+                                        <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
                                     </div>
                                 </div>
                             `;
