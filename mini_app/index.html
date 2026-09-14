@@ -461,7 +461,7 @@
             }
         }
 
-        // ---------- Exams List (با Preview) ----------
+        // ---------- Exams List ----------
         async function loadExams() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
             try {
@@ -489,18 +489,19 @@
                             <div style="margin-bottom: 20px;">
                                 <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">${cat}</h3>
                         `;
-                      
-			                        grouped[cat].forEach(e => {
+                        grouped[cat].forEach(e => {
                             html += `
-                                <div class="academic-card exam-list-card">
-                                    <div class="exam-card-info">
-                                        <strong class="exam-card-title">${e.title}</strong>
-                                        <span class="exam-card-meta">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                    </div>
-                                    <div class="exam-card-actions">
-                                        <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
-                                        <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
-                                        <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
+                                <div class="academic-card">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong style="color: #f9fafb;">${e.title}</strong>
+                                            <span style="color: #9ca3af; font-size: 13px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                        </div>
+                                        <div>
+                                            <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
+                                            <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
+                                            <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
+                                        </div>
                                     </div>
                                 </div>
                             `;
@@ -701,7 +702,7 @@
 
         // ---------- Delete Exam ----------
         async function deleteExam(examId) {
-            if (!confirm(`Are you sure you want to delete exam ID ${examId}?`)) return;
+            if (!confirm(`Are you sure you want to delete exam ID ${examId}? Results will be preserved.`)) return;
             try {
                 const response = await fetch('/api/teacher/exams', {
                     method: 'DELETE',
@@ -709,7 +710,7 @@
                     body: JSON.stringify({ exam_id: examId })
                 });
                 const data = await response.json();
-                if (data.status === 'success') { alert('✅ Exam deleted successfully.'); loadExams(); }
+                if (data.status === 'success') { alert('✅ Exam deleted. Results are preserved.'); loadExams(); }
                 else { alert('❌ ' + (data.message || 'Failed to delete exam.')); }
             } catch (error) { alert('❌ Error deleting exam.'); }
         }
@@ -740,7 +741,7 @@
                                     <div>
                                         <button class="academic-icon-btn primary" onclick="shareResult(${r.id})" title="Share">📤</button>
                                         <button class="academic-icon-btn warning" onclick="archiveResult(${r.id})" title="Archive">📦</button>
-                                        <button class="academic-icon-btn danger" onclick="deleteResult(${r.id})" title="Delete">✕</button>
+                                        <button class="academic-icon-btn danger" onclick="deleteResult(${r.id})" title="Archive & Remove">✕</button>
                                     </div>
                                 </div>
                             </div>
@@ -769,7 +770,7 @@
 
         // ---------- Unarchive Result ----------
         async function unarchiveResult(resultId, studentId) {
-            if (!confirm(`Unarchive this result?`)) return;
+            if (!confirm(`Unarchive this result? It will return to the Results list.`)) return;
             try {
                 const response = await fetch('/api/teacher/unarchive_result', {
                     method: 'POST',
@@ -809,9 +810,9 @@
             } catch (error) { alert('Error loading result details.'); }
         }
 
-        // ---------- Delete Result ----------
+        // ---------- Delete Result (Archive) ----------
         async function deleteResult(resultId) {
-            if (!confirm(`Are you sure you want to delete this result?`)) return;
+            if (!confirm(`Archive this result? It will move to the student's profile.`)) return;
             try {
                 const response = await fetch('/api/teacher/results', {
                     method: 'DELETE',
@@ -819,9 +820,9 @@
                     body: JSON.stringify({ result_id: resultId })
                 });
                 const data = await response.json();
-                if (data.status === 'success') { alert('✅ Result deleted successfully.'); loadResults(); }
-                else { alert('❌ ' + (data.message || 'Failed to delete result.')); }
-            } catch (error) { alert('❌ Error deleting result.'); }
+                if (data.status === 'success') { alert('✅ Result archived successfully.'); loadResults(); }
+                else { alert('❌ ' + (data.message || 'Failed to archive result.')); }
+            } catch (error) { alert('❌ Error archiving result.'); }
         }
 
         // ---------- Add Student Form ----------
@@ -959,7 +960,7 @@
             } catch (error) { document.getElementById('createExamStatus').textContent = '❌ Error creating exam.'; }
         }
 
-        // ---------- Send Exam ----------
+        // ---------- Send Exam (با جستجو و دسته‌بندی) ----------
         async function showSendExam() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading...</p></div>`;
             try {
@@ -970,40 +971,107 @@
                     showError('Failed to load data.'); return;
                 }
                 allGroups = groupsData.groups || [];
-                const assignedMap = {};
-                assignmentsData.assignments.forEach(a => { assignedMap[a.exam_id] = a; });
-                let html = `<div style="padding: 20px;">${academicHeader('Send Exam', 'renderDashboard(USER_DATA)')}`;
-                if (examsData.exams.length === 0) {
-                    html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
-                } else {
-                    examsData.exams.forEach(e => {
+                window.allExams = examsData.exams || [];
+                window.allAssignments = assignmentsData.assignments || [];
+                renderSendExamList();
+            } catch (error) { showError('Error loading data.'); }
+        }
+
+        // ---------- Render Send Exam List (با فیلتر) ----------
+        function renderSendExamList() {
+            const searchTerm = (document.getElementById('examSearchInput')?.value || '').toLowerCase();
+            const categoryFilter = document.getElementById('examCategoryFilter')?.value || 'all';
+
+            const assignedMap = {};
+            window.allAssignments.forEach(a => { assignedMap[a.exam_id] = a; });
+
+            let filteredExams = window.allExams.filter(e => {
+                const matchesSearch = e.title.toLowerCase().includes(searchTerm);
+                const matchesCategory = categoryFilter === 'all' || (e.category || 'Uncategorized') === categoryFilter;
+                return matchesSearch && matchesCategory;
+            });
+
+            const grouped = {};
+            filteredExams.forEach(e => {
+                const cat = e.category || 'Uncategorized';
+                if (!grouped[cat]) grouped[cat] = [];
+                grouped[cat].push(e);
+            });
+
+            const allCategories = [...new Set(window.allExams.map(e => e.category || 'Uncategorized'))].sort();
+            let categoryOptions = '<option value="all">همه دسته‌ها</option>';
+            allCategories.forEach(cat => {
+                const selected = cat === categoryFilter ? 'selected' : '';
+                categoryOptions += `<option value="${cat}" ${selected}>${cat}</option>`;
+            });
+
+            let html = `
+                <div style="padding: 20px;">
+                    <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
+                    <h2 class="academic-page-title">Send Exam</h2>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                        <input 
+                            type="text" 
+                            id="examSearchInput" 
+                            placeholder="🔍 Search exams..." 
+                            class="academic-input"
+                            oninput="renderSendExamList()"
+                            value="${searchTerm}"
+                        >
+                        <select 
+                            id="examCategoryFilter" 
+                            class="academic-input"
+                            onchange="renderSendExamList()"
+                        >
+                            ${categoryOptions}
+                        </select>
+                    </div>
+                    
+                    <p style="color: #9ca3af; font-size: 13px; margin-bottom: 12px;">
+                        Showing ${filteredExams.length} of ${window.allExams.length} exams
+                    </p>
+            `;
+
+            if (filteredExams.length === 0) {
+                html += `<p style="color: #fbbf24; text-align: center; padding: 20px;">No exams match your search.</p>`;
+            } else {
+                Object.keys(grouped).sort().forEach(cat => {
+                    html += `
+                        <div style="margin-bottom: 20px;">
+                            <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">📂 ${cat}</h3>
+                    `;
+                    grouped[cat].forEach(e => {
                         const assigned = assignedMap[e.id];
                         const isAssigned = !!assigned;
                         html += `
                             <div class="academic-card">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong style="color: #f9fafb;">${e.title}</strong>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <strong style="color: #f9fafb; display: block;">${e.title}</strong>
                                         <span style="color: #9ca3af; font-size: 13px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 13px;">Assigned to: ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 13px;">Not assigned</span>`}
+                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 12px;">📌 ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 12px;">⚠️ Not assigned</span>`}
                                     </div>
-                                    <div>
+                                    <div style="flex-shrink: 0; display: flex; gap: 4px;">
                                         ${isAssigned ? 
                                             `<button class="academic-icon-btn primary" onclick="sendExamByExamId(${e.id})" title="Send">📤</button>
                                              <button class="academic-icon-btn danger" onclick="unassignExam(${e.id})" title="Unassign">🔓</button>` :
-                                            `<button class="academic-primary-btn small" onclick="showAssignForm(${e.id})">Assign & Send</button>`
+                                            `<button class="academic-primary-btn small" onclick="showAssignForm(${e.id})">Assign</button>`
                                         }
                                     </div>
                                 </div>
                             </div>
                         `;
                     });
-                }
-                html += `</div>`;
-                document.querySelector('.exam-card').innerHTML = html;
-            } catch (error) { showError('Error loading data.'); }
+                    html += `</div>`;
+                });
+            }
+
+            html += `</div>`;
+            document.querySelector('.exam-card').innerHTML = html;
         }
 
+        // ---------- Show Assign Form ----------
         function showAssignForm(examId) {
             let groupsHtml = '';
             if (allGroups.length === 0) {
