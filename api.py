@@ -525,7 +525,14 @@ def teacher_get_student_profile(student_id):
     connection = get_database_connection()
     try:
         cursor = connection.cursor()
-	        cursor.execute("""
+        cursor.execute("""
+            SELECT s.id, s.telegram_user_id, s.first_name, s.last_name, s.username, s.group_id, g.name AS group_name, g.telegram_group_id
+            FROM students s JOIN groups g ON g.id = s.group_id WHERE s.id = ?
+        """, (student_id,))
+        student = cursor.fetchone()
+        if not student:
+            return jsonify({"status": "error", "message": "Student not found."}), 404
+        cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
                    e.title AS exam_title, e.id AS exam_id
             FROM results r
@@ -533,14 +540,12 @@ def teacher_get_student_profile(student_id):
             WHERE r.student_id = ? AND r.is_archived = 1
             ORDER BY r.completed_at DESC
         """, (student_id,))
-
-
         results = cursor.fetchall()
         result_list = []
         for r in results:
             percentage = round((r["score"] / r["total_questions"]) * 100) if r["total_questions"] > 0 else 0
             result_list.append({
-                "id": r["id"], "exam_title": r["exam_title"], "exam_id": r["exam_id"],
+                "id": r["id"], "exam_title": r["exam_title"] or "Deleted Exam", "exam_id": r["exam_id"],
                 "score": r["score"], "total_questions": r["total_questions"],
                 "percentage": percentage, "completed_at": r["completed_at"]
             })
@@ -788,8 +793,6 @@ def teacher_delete_exam():
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        # ⚠️ مهم: نتایج (results) و پاسخ‌ها (student_answers) حفظ می‌شوند
-        # فقط ارتباط آزمون با سوالات و گروه‌ها حذف می‌شود
         cursor.execute("DELETE FROM exam_questions WHERE exam_id = ?", (exam_id,))
         cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
         cursor.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
@@ -870,7 +873,7 @@ def teacher_get_results():
     connection = get_database_connection()
     try:
         cursor = connection.cursor()
-               cursor.execute("""
+        cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
                    s.first_name, s.last_name, s.username, s.telegram_user_id,
                    e.title AS exam_title, e.id AS exam_id, g.name AS group_name
@@ -881,8 +884,6 @@ def teacher_get_results():
             WHERE r.is_archived = 0
             ORDER BY r.completed_at DESC
         """)
-
-
         results = cursor.fetchall()
         result_list = []
         for r in results:
@@ -890,7 +891,7 @@ def teacher_get_results():
             result_list.append({
                 "id": r["id"], "student_name": f"{r['first_name']} {r['last_name'] or ''}".strip(),
                 "student_username": r["username"], "telegram_user_id": r["telegram_user_id"],
-                "exam_title": r["exam_title"], "exam_id": r["exam_id"], "score": r["score"],
+                "exam_title": r["exam_title"] or "Deleted Exam", "exam_id": r["exam_id"], "score": r["score"],
                 "total_questions": r["total_questions"], "percentage": percentage,
                 "group_name": r["group_name"], "started_at": r["started_at"], "completed_at": r["completed_at"]
             })
@@ -916,8 +917,6 @@ def teacher_delete_result():
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        # ⚠️ مهم: به جای حذف، فقط آرشیو می‌کنیم
-        # این کار باعث می‌شود نتیجه در پروفایل دانشجو باقی بماند
         cursor.execute("UPDATE results SET is_archived = 1 WHERE id = ?", (result_id,))
         connection.commit()
         if cursor.rowcount == 0:
@@ -1179,7 +1178,7 @@ def teacher_result_details(result_id):
                    e.id AS exam_id, e.title AS exam_title
             FROM results r
             JOIN students s ON s.id = r.student_id
-            JOIN exams e ON e.id = r.exam_id
+            LEFT JOIN exams e ON e.id = r.exam_id
             WHERE r.id = ?
         """, (result_id,))
         result = cursor.fetchone()
@@ -1213,7 +1212,7 @@ def teacher_result_details(result_id):
             "result": {
                 "id": result["id"],
                 "student_name": f"{result['first_name']} {result['last_name'] or ''}".strip(),
-                "exam_title": result["exam_title"],
+                "exam_title": result["exam_title"] or "Deleted Exam",
                 "score": result["score"],
                 "total_questions": result["total_questions"],
                 "completed_at": result["completed_at"],
