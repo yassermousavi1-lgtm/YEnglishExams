@@ -978,19 +978,24 @@
                 window.allAssignments = assignmentsData.assignments || [];
                 window.allStudents = studentsData.students || [];
                 window.openCategories = {};
+                window.selectedCategory = 'all';
                 renderSendExamList();
             } catch (error) { showError('Error loading data.'); }
         }
 
         // ---------- Render Send Exam List (با فیلتر و Toggle و جستجوی دانشجو) ----------
         function renderSendExamList() {
-            const searchTerm = (document.getElementById('examSearchInput')?.value || '').toLowerCase();
-            const categoryFilter = document.getElementById('examCategoryFilter')?.value || 'all';
+            // حفظ مقدار قبلی input و مکان کرسر
+            const oldInput = document.getElementById('examSearchInput');
+            const searchTerm = (oldInput?.value || '').toLowerCase();
+            const cursorPos = oldInput?.selectionStart || 0;
+            const wasFocused = document.activeElement === oldInput;
+
+            const categoryFilter = window.selectedCategory || 'all';
 
             const assignedMap = {};
             window.allAssignments.forEach(a => { assignedMap[a.exam_id] = a; });
 
-            // فیلتر آزمون‌ها (بر اساس عنوان آزمون)
             let filteredExams = window.allExams.filter(e => {
                 const matchesSearch = e.title.toLowerCase().includes(searchTerm);
                 const matchesCategory = categoryFilter === 'all' || (e.category || 'Uncategorized') === categoryFilter;
@@ -1005,10 +1010,25 @@
             });
 
             const allCategories = [...new Set(window.allExams.map(e => e.category || 'Uncategorized'))].sort();
-            let categoryOptions = '<option value="all">All Categories</option>';
+
+            // ساخت دکمه‌های فیلتر دسته‌بندی
+            let categoryButtonsHtml = `
+                <button 
+                    onclick="selectCategory('all')" 
+                    class="academic-filter-btn ${categoryFilter === 'all' ? 'active' : ''}"
+                >
+                    All
+                </button>
+            `;
             allCategories.forEach(cat => {
-                const selected = cat === categoryFilter ? 'selected' : '';
-                categoryOptions += `<option value="${cat}" ${selected}>${cat}</option>`;
+                categoryButtonsHtml += `
+                    <button 
+                        onclick="selectCategory('${cat}')" 
+                        class="academic-filter-btn ${categoryFilter === cat ? 'active' : ''}"
+                    >
+                        ${cat}
+                    </button>
+                `;
             });
 
             if (!window.openCategories) {
@@ -1029,22 +1049,20 @@
                     <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
                     <h2 class="academic-page-title">Send Exam</h2>
                     
-                    <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                    <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
                         <input 
                             type="text" 
                             id="examSearchInput" 
                             placeholder="🔍 Search exams or students..." 
                             class="academic-input"
                             oninput="renderSendExamList()"
-                            value="${searchTerm}"
+                            value="${oldInput?.value || ''}"
+                            autocomplete="off"
                         >
-                        <select 
-                            id="examCategoryFilter" 
-                            class="academic-filter-select"
-                            onchange="renderSendExamList()"
-                        >
-                            ${categoryOptions}
-                        </select>
+                        
+                        <div class="academic-filter-container">
+                            ${categoryButtonsHtml}
+                        </div>
                     </div>
             `;
 
@@ -1132,6 +1150,21 @@
 
             html += `</div>`;
             document.querySelector('.exam-card').innerHTML = html;
+
+            // بازگرداندن فوکوس و مکان کرسر
+            if (wasFocused) {
+                const newInput = document.getElementById('examSearchInput');
+                if (newInput) {
+                    newInput.focus();
+                    newInput.setSelectionRange(cursorPos, cursorPos);
+                }
+            }
+        }
+
+        // ---------- Select Category ----------
+        function selectCategory(cat) {
+            window.selectedCategory = cat;
+            renderSendExamList();
         }
 
         // ---------- Toggle Category ----------
