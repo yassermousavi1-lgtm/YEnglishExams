@@ -960,7 +960,7 @@
             } catch (error) { document.getElementById('createExamStatus').textContent = '❌ Error creating exam.'; }
         }
 
-        // ---------- Send Exam (با جستجو و دسته‌بندی) ----------
+        // ---------- Send Exam (با جستجو، فیلتر و Toggle) ----------
         async function showSendExam() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading...</p></div>`;
             try {
@@ -973,11 +973,12 @@
                 allGroups = groupsData.groups || [];
                 window.allExams = examsData.exams || [];
                 window.allAssignments = assignmentsData.assignments || [];
+                window.openCategories = {};
                 renderSendExamList();
             } catch (error) { showError('Error loading data.'); }
         }
 
-        // ---------- Render Send Exam List (با فیلتر) ----------
+        // ---------- Render Send Exam List (با فیلتر و Toggle) ----------
         function renderSendExamList() {
             const searchTerm = (document.getElementById('examSearchInput')?.value || '').toLowerCase();
             const categoryFilter = document.getElementById('examCategoryFilter')?.value || 'all';
@@ -999,11 +1000,15 @@
             });
 
             const allCategories = [...new Set(window.allExams.map(e => e.category || 'Uncategorized'))].sort();
-           let categoryOptions = '<option value="all">All Categories</option>';
+            let categoryOptions = '<option value="all">All Categories</option>';
             allCategories.forEach(cat => {
                 const selected = cat === categoryFilter ? 'selected' : '';
                 categoryOptions += `<option value="${cat}" ${selected}>${cat}</option>`;
             });
+
+            if (!window.openCategories) {
+                window.openCategories = {};
+            }
 
             let html = `
                 <div style="padding: 20px;">
@@ -1037,20 +1042,35 @@
                 html += `<p style="color: #fbbf24; text-align: center; padding: 20px;">No exams match your search.</p>`;
             } else {
                 Object.keys(grouped).sort().forEach(cat => {
+                    const catId = cat.replace(/[^a-zA-Z0-9]/g, '_');
+                    const isOpen = window.openCategories[catId] === true;
+                    const examCount = grouped[cat].length;
+                    
                     html += `
-                        <div style="margin-bottom: 20px;">
-                            <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">📂 ${cat}</h3>
+                        <div style="margin-bottom: 12px;">
+                            <div 
+                                onclick="toggleCategory('${catId}')"
+                                style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #1f2937; border: 1px solid #374151; border-radius: 8px; cursor: pointer; user-select: none;"
+                            >
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span id="arrow_${catId}" style="color: #60a5fa; font-size: 16px; transition: transform 0.2s; display: inline-block; ${isOpen ? 'transform: rotate(90deg);' : ''}">▸</span>
+                                    <strong style="color: #60a5fa; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">${cat}</strong>
+                                    <span style="color: #6b7280; font-size: 12px;">(${examCount})</span>
+                                </div>
+                            </div>
+                            <div id="cat_${catId}" style="display: ${isOpen ? 'block' : 'none'}; margin-top: 8px; padding-left: 8px;">
                     `;
+                    
                     grouped[cat].forEach(e => {
                         const assigned = assignedMap[e.id];
                         const isAssigned = !!assigned;
                         html += `
-                            <div class="academic-card">
+                            <div class="academic-card" style="margin-bottom: 6px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; min-width: 0;">
-                                        <strong style="color: #f9fafb; display: block;">${e.title}</strong>
-                                        <span style="color: #9ca3af; font-size: 13px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 12px;">📌 ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 12px;">⚠️ Not assigned</span>`}
+                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${e.title}</strong>
+                                        <span style="color: #9ca3af; font-size: 12px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 11px;">📌 ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 11px;">⚠️ Not assigned</span>`}
                                     </div>
                                     <div style="flex-shrink: 0; display: flex; gap: 4px;">
                                         ${isAssigned ? 
@@ -1063,12 +1083,33 @@
                             </div>
                         `;
                     });
-                    html += `</div>`;
+                    
+                    html += `
+                            </div>
+                        </div>
+                    `;
                 });
             }
 
             html += `</div>`;
             document.querySelector('.exam-card').innerHTML = html;
+        }
+
+        // ---------- Toggle Category ----------
+        function toggleCategory(catId) {
+            if (!window.openCategories) window.openCategories = {};
+            window.openCategories[catId] = !window.openCategories[catId];
+            
+            const element = document.getElementById('cat_' + catId);
+            const arrow = document.getElementById('arrow_' + catId);
+            
+            if (window.openCategories[catId]) {
+                element.style.display = 'block';
+                arrow.style.transform = 'rotate(90deg)';
+            } else {
+                element.style.display = 'none';
+                arrow.style.transform = 'rotate(0deg)';
+            }
         }
 
         // ---------- Show Assign Form ----------
