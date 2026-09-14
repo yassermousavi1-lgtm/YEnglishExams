@@ -525,21 +525,16 @@ def teacher_get_student_profile(student_id):
     connection = get_database_connection()
     try:
         cursor = connection.cursor()
-        cursor.execute("""
-            SELECT s.id, s.telegram_user_id, s.first_name, s.last_name, s.username, s.group_id, g.name AS group_name, g.telegram_group_id
-            FROM students s JOIN groups g ON g.id = s.group_id WHERE s.id = ?
-        """, (student_id,))
-        student = cursor.fetchone()
-        if not student:
-            return jsonify({"status": "error", "message": "Student not found."}), 404
-        cursor.execute("""
+	        cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
                    e.title AS exam_title, e.id AS exam_id
             FROM results r
-            JOIN exams e ON e.id = r.exam_id
+            LEFT JOIN exams e ON e.id = r.exam_id
             WHERE r.student_id = ? AND r.is_archived = 1
             ORDER BY r.completed_at DESC
         """, (student_id,))
+
+
         results = cursor.fetchall()
         result_list = []
         for r in results:
@@ -875,17 +870,19 @@ def teacher_get_results():
     connection = get_database_connection()
     try:
         cursor = connection.cursor()
-        cursor.execute("""
+               cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
                    s.first_name, s.last_name, s.username, s.telegram_user_id,
                    e.title AS exam_title, e.id AS exam_id, g.name AS group_name
             FROM results r
             JOIN students s ON s.id = r.student_id
-            JOIN exams e ON e.id = r.exam_id
+            LEFT JOIN exams e ON e.id = r.exam_id
             JOIN groups g ON g.id = s.group_id
             WHERE r.is_archived = 0
             ORDER BY r.completed_at DESC
         """)
+
+
         results = cursor.fetchall()
         result_list = []
         for r in results:
