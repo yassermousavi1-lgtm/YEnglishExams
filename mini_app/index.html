@@ -985,7 +985,6 @@
 
         // ---------- Render Send Exam List (با فیلتر و Toggle و جستجوی دانشجو) ----------
         function renderSendExamList() {
-            // حفظ مقدار قبلی input و مکان کرسر
             const oldInput = document.getElementById('examSearchInput');
             const searchTerm = (oldInput?.value || '').toLowerCase();
             const cursorPos = oldInput?.selectionStart || 0;
@@ -1011,7 +1010,6 @@
 
             const allCategories = [...new Set(window.allExams.map(e => e.category || 'Uncategorized'))].sort();
 
-            // ساخت دکمه‌های فیلتر دسته‌بندی
             let categoryButtonsHtml = `
                 <button 
                     onclick="selectCategory('all')" 
@@ -1035,12 +1033,34 @@
                 window.openCategories = {};
             }
 
-            // جستجوی دانشجو
+            // ========================================================
+            // جستجوی دانشجو → پیدا کردن آزمون‌های assign شده به گروه او
+            // ========================================================
             let matchedStudents = [];
+            let studentExams = [];
+
             if (searchTerm.length > 0) {
                 matchedStudents = window.allStudents.filter(s => {
                     const fullName = `${s.first_name} ${s.last_name || ''}`.toLowerCase();
                     return fullName.includes(searchTerm) || String(s.telegram_user_id).includes(searchTerm);
+                });
+
+                matchedStudents.forEach(s => {
+                    window.allAssignments.forEach(a => {
+                        if (a.group_id === s.group_id) {
+                            const examInfo = window.allExams.find(e => e.id === a.exam_id);
+                            if (examInfo) {
+                                const alreadyAdded = studentExams.find(se => se.exam.id === examInfo.id && se.student.id === s.id);
+                                if (!alreadyAdded) {
+                                    studentExams.push({
+                                        exam: examInfo,
+                                        student: s,
+                                        assignment: a
+                                    });
+                                }
+                            }
+                        }
+                    });
                 });
             }
 
@@ -1066,29 +1086,45 @@
                     </div>
             `;
 
-            // نمایش دانشجویان یافت شده
+            // ========================================================
+            // نمایش آزمون‌های assign شده به دانشجویان پیدا شده
+            // ========================================================
             if (matchedStudents.length > 0) {
                 html += `
-                    <div style="margin-bottom: 16px;">
-                        <h3 style="color: #34d399; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">👥 Matched Students (${matchedStudents.length})</h3>
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: #34d399; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">
+                            📋 Assigned Exams for Matched Students (${matchedStudents.length} student${matchedStudents.length > 1 ? 's' : ''})
+                        </h3>
                 `;
-                matchedStudents.forEach(s => {
-                    html += `
-                        <div class="academic-card" style="cursor: pointer; border-color: #34d399;" onclick="showStudentProfile(${s.id})">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
-                                    <span style="color: #9ca3af; font-size: 12px; display: block;">Telegram ID: ${s.telegram_user_id}</span>
-                                    <span style="color: #60a5fa; font-size: 12px; display: block;">Group: ${s.group_name}</span>
+
+                if (studentExams.length === 0) {
+                    html += `<p style="color: #fbbf24; padding: 10px;">No exams are assigned to these students' groups yet.</p>`;
+                } else {
+                    studentExams.forEach(se => {
+                        html += `
+                            <div class="academic-card" style="border-color: #34d399; margin-bottom: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="flex: 1; min-width: 0;">
+                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${se.exam.title}</strong>
+                                        <span style="color: #9ca3af; font-size: 12px; display: block;">Questions: ${se.exam.question_count || 0} | Time: ${se.exam.time_limit} min</span>
+                                        <span style="color: #34d399; font-size: 12px; display: block;">👤 ${se.student.first_name} ${se.student.last_name || ''}</span>
+                                        <span style="color: #60a5fa; font-size: 11px;">📌 ${se.assignment.group_name} (ID: ${se.assignment.group_id})</span>
+                                    </div>
+                                    <div style="flex-shrink: 0; display: flex; gap: 4px;">
+                                        <button class="academic-icon-btn primary" onclick="sendExamByExamId(${se.exam.id})" title="Send">📤</button>
+                                        <button class="academic-icon-btn danger" onclick="unassignExam(${se.exam.id})" title="Unassign">🔓</button>
+                                    </div>
                                 </div>
-                                <div style="color: #34d399; font-size: 18px;">▸</div>
                             </div>
-                        </div>
-                    `;
-                });
+                        `;
+                    });
+                }
                 html += `</div>`;
             }
 
+            // ========================================================
+            // نمایش همه آزمون‌ها (فیلتر شده)
+            // ========================================================
             html += `
                     <p style="color: #9ca3af; font-size: 13px; margin-bottom: 12px;">
                         Showing ${filteredExams.length} of ${window.allExams.length} exams
@@ -1151,7 +1187,6 @@
             html += `</div>`;
             document.querySelector('.exam-card').innerHTML = html;
 
-            // بازگرداندن فوکوس و مکان کرسر
             if (wasFocused) {
                 const newInput = document.getElementById('examSearchInput');
                 if (newInput) {
