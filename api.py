@@ -282,7 +282,6 @@ def get_exam_questions(exam_id):
 
 @app.route("/api/teacher/preview_exam/<int:exam_id>")
 def teacher_preview_exam(exam_id):
-    """Preview exam for teacher (without saving results)."""
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
         return jsonify({"status": "error", "message": auth_result["message"]}), 401
@@ -793,13 +792,13 @@ def teacher_delete_exam():
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
+        # ⚠️ مهم: نتایج (results) و پاسخ‌ها (student_answers) حفظ می‌شوند
+        # فقط ارتباط آزمون با سوالات و گروه‌ها حذف می‌شود
         cursor.execute("DELETE FROM exam_questions WHERE exam_id = ?", (exam_id,))
         cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
-        cursor.execute("DELETE FROM student_answers WHERE result_id IN (SELECT id FROM results WHERE exam_id = ?)", (exam_id,))
-        cursor.execute("DELETE FROM results WHERE exam_id = ?", (exam_id,))
         cursor.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
         connection.commit()
-        return jsonify({"status": "success", "message": "Exam deleted successfully."})
+        return jsonify({"status": "success", "message": "Exam deleted. Results are preserved."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -919,12 +918,13 @@ def teacher_delete_result():
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        cursor.execute("DELETE FROM student_answers WHERE result_id = ?", (result_id,))
-        cursor.execute("DELETE FROM results WHERE id = ?", (result_id,))
+        # ⚠️ مهم: به جای حذف، فقط آرشیو می‌کنیم
+        # این کار باعث می‌شود نتیجه در پروفایل دانشجو باقی بماند
+        cursor.execute("UPDATE results SET is_archived = 1 WHERE id = ?", (result_id,))
         connection.commit()
         if cursor.rowcount == 0:
             return jsonify({"status": "error", "message": "Result not found."}), 404
-        return jsonify({"status": "success", "message": "Result deleted successfully."})
+        return jsonify({"status": "success", "message": "Result archived (not deleted)."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
