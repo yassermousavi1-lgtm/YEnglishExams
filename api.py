@@ -28,6 +28,7 @@ INIT_DATA_MAX_AGE = 3600
 
 def get_database_connection():
     connection = sqlite3.connect(DATABASE_PATH)
+    connection.execute("PRAGMA foreign_keys = ON")
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("ALTER TABLE exams ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
