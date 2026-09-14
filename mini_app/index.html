@@ -964,8 +964,11 @@
         async function showSendExam() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading...</p></div>`;
             try {
-                const [examsData, assignmentsData, groupsData] = await Promise.all([
-                    fetchAPI('/api/teacher/exams'), fetchAPI('/api/teacher/assignments'), fetchAPI('/api/teacher/groups')
+                const [examsData, assignmentsData, groupsData, studentsData] = await Promise.all([
+                    fetchAPI('/api/teacher/exams'), 
+                    fetchAPI('/api/teacher/assignments'), 
+                    fetchAPI('/api/teacher/groups'),
+                    fetchAPI('/api/teacher/students')
                 ]);
                 if (examsData.status !== 'success' || assignmentsData.status !== 'success' || groupsData.status !== 'success') {
                     showError('Failed to load data.'); return;
@@ -973,12 +976,13 @@
                 allGroups = groupsData.groups || [];
                 window.allExams = examsData.exams || [];
                 window.allAssignments = assignmentsData.assignments || [];
+                window.allStudents = studentsData.students || [];
                 window.openCategories = {};
                 renderSendExamList();
             } catch (error) { showError('Error loading data.'); }
         }
 
-        // ---------- Render Send Exam List (با فیلتر و Toggle) ----------
+        // ---------- Render Send Exam List (با فیلتر و Toggle و جستجوی دانشجو) ----------
         function renderSendExamList() {
             const searchTerm = (document.getElementById('examSearchInput')?.value || '').toLowerCase();
             const categoryFilter = document.getElementById('examCategoryFilter')?.value || 'all';
@@ -986,6 +990,7 @@
             const assignedMap = {};
             window.allAssignments.forEach(a => { assignedMap[a.exam_id] = a; });
 
+            // فیلتر آزمون‌ها (بر اساس عنوان آزمون)
             let filteredExams = window.allExams.filter(e => {
                 const matchesSearch = e.title.toLowerCase().includes(searchTerm);
                 const matchesCategory = categoryFilter === 'all' || (e.category || 'Uncategorized') === categoryFilter;
@@ -1010,6 +1015,15 @@
                 window.openCategories = {};
             }
 
+            // جستجوی دانشجو
+            let matchedStudents = [];
+            if (searchTerm.length > 0) {
+                matchedStudents = window.allStudents.filter(s => {
+                    const fullName = `${s.first_name} ${s.last_name || ''}`.toLowerCase();
+                    return fullName.includes(searchTerm) || String(s.telegram_user_id).includes(searchTerm);
+                });
+            }
+
             let html = `
                 <div style="padding: 20px;">
                     <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
@@ -1019,20 +1033,45 @@
                         <input 
                             type="text" 
                             id="examSearchInput" 
-                            placeholder="🔍 Search exams..." 
+                            placeholder="🔍 Search exams or students..." 
                             class="academic-input"
                             oninput="renderSendExamList()"
                             value="${searchTerm}"
                         >
                         <select 
                             id="examCategoryFilter" 
-                            class="academic-input"
+                            class="academic-filter-select"
                             onchange="renderSendExamList()"
                         >
                             ${categoryOptions}
                         </select>
                     </div>
-                    
+            `;
+
+            // نمایش دانشجویان یافت شده
+            if (matchedStudents.length > 0) {
+                html += `
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="color: #34d399; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">👥 Matched Students (${matchedStudents.length})</h3>
+                `;
+                matchedStudents.forEach(s => {
+                    html += `
+                        <div class="academic-card" style="cursor: pointer; border-color: #34d399;" onclick="showStudentProfile(${s.id})">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong style="color: #f9fafb;">${s.first_name} ${s.last_name || ''}</strong>
+                                    <span style="color: #9ca3af; font-size: 12px; display: block;">Telegram ID: ${s.telegram_user_id}</span>
+                                    <span style="color: #60a5fa; font-size: 12px; display: block;">Group: ${s.group_name}</span>
+                                </div>
+                                <div style="color: #34d399; font-size: 18px;">▸</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            html += `
                     <p style="color: #9ca3af; font-size: 13px; margin-bottom: 12px;">
                         Showing ${filteredExams.length} of ${window.allExams.length} exams
                     </p>
