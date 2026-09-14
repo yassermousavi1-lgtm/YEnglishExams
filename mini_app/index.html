@@ -999,7 +999,7 @@
             });
 
             const allCategories = [...new Set(window.allExams.map(e => e.category || 'Uncategorized'))].sort();
-            let categoryOptions = '<option value="all">همه دسته‌ها</option>';
+           let categoryOptions = '<option value="all">All Categories</option>';
             allCategories.forEach(cat => {
                 const selected = cat === categoryFilter ? 'selected' : '';
                 categoryOptions += `<option value="${cat}" ${selected}>${cat}</option>`;
