@@ -41,6 +41,11 @@ def get_database_connection():
     except:
         pass
     try:
+        connection.execute("ALTER TABLE results ADD COLUMN exam_title_snapshot TEXT")
+        connection.commit()
+    except:
+        pass
+    try:
         connection.execute("""
             CREATE TABLE IF NOT EXISTS attendance (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -381,9 +386,9 @@ def submit_exam():
         if not started_at:
             started_at = completed_at
         cursor.execute("""
-            INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived)
-            VALUES (?, ?, ?, ?, ?, ?, 0)
-        """, (student["id"], exam_id, score, total_questions, started_at, completed_at))
+            INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived, exam_title_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+        """, (student["id"], exam_id, score, total_questions, started_at, completed_at, exam["title"]))
         result_id = cursor.lastrowid
         for question in questions:
             question_id = str(question["id"])
@@ -534,9 +539,8 @@ def teacher_get_student_profile(student_id):
             return jsonify({"status": "error", "message": "Student not found."}), 404
         cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
-                   e.title AS exam_title, e.id AS exam_id
+                   r.exam_title_snapshot, r.exam_id
             FROM results r
-            LEFT JOIN exams e ON e.id = r.exam_id
             WHERE r.student_id = ? AND r.is_archived = 1
             ORDER BY r.completed_at DESC
         """, (student_id,))
@@ -545,9 +549,13 @@ def teacher_get_student_profile(student_id):
         for r in results:
             percentage = round((r["score"] / r["total_questions"]) * 100) if r["total_questions"] > 0 else 0
             result_list.append({
-                "id": r["id"], "exam_title": r["exam_title"] or "Deleted Exam", "exam_id": r["exam_id"],
-                "score": r["score"], "total_questions": r["total_questions"],
-                "percentage": percentage, "completed_at": r["completed_at"]
+                "id": r["id"],
+                "exam_title": r["exam_title_snapshot"] or "Deleted Exam",
+                "exam_id": r["exam_id"],
+                "score": r["score"],
+                "total_questions": r["total_questions"],
+                "percentage": percentage,
+                "completed_at": r["completed_at"]
             })
         cursor.execute("""
             SELECT id, session_number, extra_minutes, is_makeup, created_at
@@ -875,11 +883,11 @@ def teacher_get_results():
         cursor = connection.cursor()
         cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
+                   r.exam_title_snapshot, r.exam_id,
                    s.first_name, s.last_name, s.username, s.telegram_user_id,
-                   e.title AS exam_title, e.id AS exam_id, g.name AS group_name
+                   g.name AS group_name
             FROM results r
             JOIN students s ON s.id = r.student_id
-            LEFT JOIN exams e ON e.id = r.exam_id
             JOIN groups g ON g.id = s.group_id
             WHERE r.is_archived = 0
             ORDER BY r.completed_at DESC
@@ -891,7 +899,8 @@ def teacher_get_results():
             result_list.append({
                 "id": r["id"], "student_name": f"{r['first_name']} {r['last_name'] or ''}".strip(),
                 "student_username": r["username"], "telegram_user_id": r["telegram_user_id"],
-                "exam_title": r["exam_title"] or "Deleted Exam", "exam_id": r["exam_id"], "score": r["score"],
+                "exam_title": r["exam_title_snapshot"] or "Deleted Exam",
+                "exam_id": r["exam_id"], "score": r["score"],
                 "total_questions": r["total_questions"], "percentage": percentage,
                 "group_name": r["group_name"], "started_at": r["started_at"], "completed_at": r["completed_at"]
             })
@@ -1174,11 +1183,10 @@ def teacher_result_details(result_id):
         cursor = connection.cursor()
         cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at,
-                   s.first_name, s.last_name, s.telegram_user_id,
-                   e.id AS exam_id, e.title AS exam_title
+                   r.exam_title_snapshot,
+                   s.first_name, s.last_name, s.telegram_user_id
             FROM results r
             JOIN students s ON s.id = r.student_id
-            LEFT JOIN exams e ON e.id = r.exam_id
             WHERE r.id = ?
         """, (result_id,))
         result = cursor.fetchone()
@@ -1212,7 +1220,7 @@ def teacher_result_details(result_id):
             "result": {
                 "id": result["id"],
                 "student_name": f"{result['first_name']} {result['last_name'] or ''}".strip(),
-                "exam_title": result["exam_title"] or "Deleted Exam",
+                "exam_title": result["exam_title_snapshot"] or "Deleted Exam",
                 "score": result["score"],
                 "total_questions": result["total_questions"],
                 "completed_at": result["completed_at"],
