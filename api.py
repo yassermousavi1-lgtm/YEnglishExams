@@ -1230,6 +1230,150 @@ def teacher_result_details(result_id):
     finally:
         connection.close()
 
+# ============================================================
+# CLASS SCHEDULE ENDPOINTS
+# ============================================================
+
+@app.route("/api/teacher/schedule", methods=["GET"])
+def teacher_get_schedule():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT id, day_of_week, student_name, start_time, end_time, notes, created_at
+            FROM class_schedule
+            ORDER BY 
+                CASE day_of_week
+                    WHEN 'Monday' THEN 1
+                    WHEN 'Tuesday' THEN 2
+                    WHEN 'Wednesday' THEN 3
+                    WHEN 'Thursday' THEN 4
+                    WHEN 'Friday' THEN 5
+                    WHEN 'Saturday' THEN 6
+                    WHEN 'Sunday' THEN 7
+                END,
+                start_time ASC
+        """)
+        rows = cursor.fetchall()
+        schedule_list = []
+        for r in rows:
+            schedule_list.append({
+                "id": r["id"],
+                "day_of_week": r["day_of_week"],
+                "student_name": r["student_name"],
+                "start_time": r["start_time"],
+                "end_time": r["end_time"],
+                "notes": r["notes"],
+                "created_at": r["created_at"]
+            })
+        return jsonify({"status": "success", "schedule": schedule_list, "total": len(schedule_list)})
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/schedule", methods=["POST"])
+def teacher_add_schedule():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    day_of_week = data.get("day_of_week", "").strip()
+    student_name = data.get("student_name", "").strip()
+    start_time = data.get("start_time", "").strip()
+    end_time = data.get("end_time", "").strip()
+    notes = data.get("notes", "").strip()
+    if not day_of_week or not student_name or not start_time or not end_time:
+        return jsonify({"status": "error", "message": "All required fields must be filled."}), 400
+    valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    if day_of_week not in valid_days:
+        return jsonify({"status": "error", "message": "Invalid day of week."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO class_schedule (day_of_week, student_name, start_time, end_time, notes)
+            VALUES (?, ?, ?, ?, ?)
+        """, (day_of_week, student_name, start_time, end_time, notes))
+        connection.commit()
+        return jsonify({"status": "success", "message": "Class added successfully.", "id": cursor.lastrowid})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/schedule/<int:schedule_id>", methods=["PUT"])
+def teacher_update_schedule(schedule_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    day_of_week = data.get("day_of_week", "").strip()
+    student_name = data.get("student_name", "").strip()
+    start_time = data.get("start_time", "").strip()
+    end_time = data.get("end_time", "").strip()
+    notes = data.get("notes", "").strip()
+    if not day_of_week or not student_name or not start_time or not end_time:
+        return jsonify({"status": "error", "message": "All required fields must be filled."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            UPDATE class_schedule
+            SET day_of_week = ?, student_name = ?, start_time = ?, end_time = ?, notes = ?
+            WHERE id = ?
+        """, (day_of_week, student_name, start_time, end_time, notes, schedule_id))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Class not found."}), 404
+        return jsonify({"status": "success", "message": "Class updated successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/schedule/<int:schedule_id>", methods=["DELETE"])
+def teacher_delete_schedule(schedule_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("DELETE FROM class_schedule WHERE id = ?", (schedule_id,))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Class not found."}), 404
+        return jsonify({"status": "success", "message": "Class deleted successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
 
 if __name__ == "__main__":
     print()

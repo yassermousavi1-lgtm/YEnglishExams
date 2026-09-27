@@ -332,9 +332,37 @@ def create_database():
     """)
 
     # ========================================================
-    # SAVE CHANGES
+    # ========================================================
+    # ========================================================
+    # CLASS SCHEDULE
+    # ========================================================
+    #
+    # Weekly schedule of private classes.
+    #
+    # Each row represents one class session for a student.
+    #
+    # day_of_week:  'Monday', 'Tuesday', ..., 'Sunday'
+    # start_time:   '16:00'
+    # end_time:     '17:00'
     # ========================================================
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS class_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            day_of_week TEXT NOT NULL,
+
+            student_name TEXT NOT NULL,
+
+            start_time TEXT NOT NULL,
+
+            end_time TEXT NOT NULL,
+
+            notes TEXT,
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     connection.commit()
 
     connection.close()
