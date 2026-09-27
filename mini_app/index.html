@@ -192,6 +192,16 @@
                         </div>
                     </div>
 
+                    <div style="margin-bottom: 28px;">
+                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Schedule</h3>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <button class="academic-menu-item" onclick="showClassSchedule()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>My Classes</span>
+                            </button>
+                        </div>
+                    </div>
+
                     <p style="color: #4b5563; text-align: center; font-size: 12px; margin-top: 24px;">YEnglish Exams v2.0</p>
                 </div>
             `;
@@ -1318,6 +1328,240 @@
                 const data = await response.json();
                 statusDiv.textContent = data.status === 'success' ? '✅ ' + (data.message || 'Sent!') : '❌ ' + (data.message || 'Failed.');
             } catch (error) { statusDiv.textContent = '❌ Error.'; }
+        }
+
+        // ============================================================
+        // CLASS SCHEDULE
+        // ============================================================
+
+        const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const DAYS_SHORT = { 'Monday': 'MON', 'Tuesday': 'TUE', 'Wednesday': 'WED', 'Thursday': 'THU', 'Friday': 'FRI', 'Saturday': 'SAT', 'Sunday': 'SUN' };
+        const HOURS = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
+
+        // ---------- Show Class Schedule ----------
+        async function showClassSchedule() {
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading schedule...</p></div>`;
+            try {
+                const data = await fetchAPI('/api/teacher/schedule');
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load schedule.');
+                    return;
+                }
+                window.scheduleData = data.schedule || [];
+                renderScheduleGrid();
+            } catch (error) {
+                showError('Error loading schedule.');
+            }
+        }
+
+        // ---------- Render Schedule Grid ----------
+        function renderScheduleGrid() {
+            const grid = {};
+            DAYS_OF_WEEK.forEach(day => {
+                grid[day] = {};
+                HOURS.forEach(hour => { grid[day][hour] = []; });
+            });
+
+            window.scheduleData.forEach(item => {
+                const hour = item.start_time.substring(0, 2) + ':00';
+                if (grid[item.day_of_week] && grid[item.day_of_week][hour]) {
+                    grid[item.day_of_week][hour].push(item);
+                }
+            });
+
+            let html = `
+                <div style="padding: 20px;">
+                    <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
+                    <h2 class="academic-page-title">📅 My Class Schedule</h2>
+                    
+                    <button class="academic-primary-btn" style="width: 100%; margin-bottom: 16px;" onclick="showAddClassForm()">➕ Add Class</button>
+            `;
+
+            if (window.scheduleData.length === 0) {
+                html += `<p style="color: #9ca3af; text-align: center; padding: 20px;">No classes scheduled yet.</p>`;
+            } else {
+                html += `
+                    <div class="schedule-container">
+                        <table class="schedule-table">
+                            <thead>
+                                <tr>
+                                    <th class="schedule-time-col">Time</th>
+                `;
+                DAYS_OF_WEEK.forEach(day => {
+                    html += `<th>${DAYS_SHORT[day]}</th>`;
+                });
+                html += `
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                HOURS.forEach(hour => {
+                    html += `<tr>`;
+                    html += `<td class="schedule-time-col">${hour}</td>`;
+                    DAYS_OF_WEEK.forEach(day => {
+                        const classes = grid[day][hour];
+                        if (classes.length > 0) {
+                            html += `<td class="schedule-cell-occupied">`;
+                            classes.forEach(c => {
+                                html += `
+                                    <div class="schedule-class-card" onclick="showEditClassForm(${c.id})">
+                                        <strong>${c.student_name}</strong>
+                                        <span>${c.start_time}-${c.end_time}</span>
+                                    </div>
+                                `;
+                            });
+                            html += `</td>`;
+                        } else {
+                            html += `<td></td>`;
+                        }
+                    });
+                    html += `</tr>`;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+            document.querySelector('.exam-card').innerHTML = html;
+        }
+
+        // ---------- Show Add Class Form ----------
+        function showAddClassForm() {
+            renderClassForm(null);
+        }
+
+        // ---------- Show Edit Class Form ----------
+        function showEditClassForm(id) {
+            const item = window.scheduleData.find(s => s.id === id);
+            if (!item) { alert('Class not found.'); return; }
+            renderClassForm(item);
+        }
+
+        // ---------- Render Class Form ----------
+        function renderClassForm(item) {
+            const isEdit = item !== null;
+            const dayValue = isEdit ? item.day_of_week : 'Monday';
+            const nameValue = isEdit ? item.student_name : '';
+            const startValue = isEdit ? item.start_time : '16:00';
+            const endValue = isEdit ? item.end_time : '17:00';
+            const notesValue = isEdit ? (item.notes || '') : '';
+
+            let dayOptions = '';
+            DAYS_OF_WEEK.forEach(d => {
+                const selected = d === dayValue ? 'selected' : '';
+                dayOptions += `<option value="${d}" ${selected}>${d}</option>`;
+            });
+
+            let html = `
+                <div style="padding: 20px;">
+                    <button class="academic-back-button" onclick="showClassSchedule()">▸ Back</button>
+                    <h2 class="academic-page-title">${isEdit ? '✏️ Edit Class' : '➕ Add Class'}</h2>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <label style="color: #9ca3af; font-size: 13px;">Day of Week</label>
+                        <select id="classDay" class="academic-filter-select">
+                            ${dayOptions}
+                        </select>
+                        
+                        <label style="color: #9ca3af; font-size: 13px;">Student Name</label>
+                        <input id="className" type="text" placeholder="Student Name" class="academic-input" value="${nameValue}">
+                        
+                        <label style="color: #9ca3af; font-size: 13px;">Start Time</label>
+                        <select id="classStart" class="academic-filter-select">
+                            ${HOURS.map(h => `<option value="${h}" ${h === startValue ? 'selected' : ''}>${h}</option>`).join('')}
+                        </select>
+                        
+                        <label style="color: #9ca3af; font-size: 13px;">End Time</label>
+                        <select id="classEnd" class="academic-filter-select">
+                            ${HOURS.map(h => `<option value="${h}" ${h === endValue ? 'selected' : ''}>${h}</option>`).join('')}
+                        </select>
+                        
+                        <label style="color: #9ca3af; font-size: 13px;">Notes (optional)</label>
+                        <input id="classNotes" type="text" placeholder="Notes" class="academic-input" value="${notesValue}">
+                        
+                        <button class="academic-primary-btn" style="margin-top: 8px;" onclick="saveClassForm(${isEdit ? item.id : 'null'})">
+                            ${isEdit ? 'Save Changes' : 'Add Class'}
+                        </button>
+                        
+                        ${isEdit ? `<button class="academic-secondary-btn" style="margin-top: 4px;" onclick="deleteClass(${item.id})">🗑️ Delete Class</button>` : ''}
+                    </div>
+                    
+                    <div id="classFormStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                </div>
+            `;
+            document.querySelector('.exam-card').innerHTML = html;
+        }
+
+        // ---------- Save Class Form ----------
+        async function saveClassForm(id) {
+            const day = document.getElementById('classDay').value;
+            const name = document.getElementById('className').value.trim();
+            const startTime = document.getElementById('classStart').value;
+            const endTime = document.getElementById('classEnd').value;
+            const notes = document.getElementById('classNotes').value.trim();
+
+            if (!name) {
+                document.getElementById('classFormStatus').textContent = '⚠️ Student name is required.';
+                return;
+            }
+
+            if (startTime >= endTime) {
+                document.getElementById('classFormStatus').textContent = '⚠️ End time must be after start time.';
+                return;
+            }
+
+            document.getElementById('classFormStatus').textContent = 'Saving...';
+
+            try {
+                const url = id ? `/api/teacher/schedule/${id}` : '/api/teacher/schedule';
+                const method = id ? 'PUT' : 'POST';
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        day_of_week: day,
+                        student_name: name,
+                        start_time: startTime,
+                        end_time: endTime,
+                        notes: notes
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showClassSchedule();
+                } else {
+                    document.getElementById('classFormStatus').textContent = '❌ ' + (data.message || 'Failed to save.');
+                }
+            } catch (error) {
+                document.getElementById('classFormStatus').textContent = '❌ Error saving class.';
+            }
+        }
+
+        // ---------- Delete Class ----------
+        async function deleteClass(id) {
+            if (!confirm('Delete this class?')) return;
+            try {
+                const response = await fetch(`/api/teacher/schedule/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Telegram-Init-Data': telegram?.initData || '' }
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showClassSchedule();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to delete.'));
+                }
+            } catch (error) {
+                alert('❌ Error deleting class.');
+            }
         }
 
         function showError(message) {

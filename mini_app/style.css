@@ -814,3 +814,107 @@ body {
     .timer { font-size: 16px; min-width: 72px; padding: 10px 12px; }
     .result-score { font-size: 44px; }
 }
+/* ============================================================
+   CLASS SCHEDULE
+   ============================================================ */
+
+.schedule-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px;
+    border: 1px solid #374151;
+    background: #111827;
+}
+
+.schedule-table {
+    width: 100%;
+    min-width: 700px;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.schedule-table thead {
+    background: #1f2937;
+    position: sticky;
+    top: 0;
+}
+
+.schedule-table th {
+    padding: 10px 6px;
+    color: #60a5fa;
+    font-weight: 700;
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid #374151;
+    border-right: 1px solid #374151;
+}
+
+.schedule-table th:last-child {
+    border-right: none;
+}
+
+.schedule-time-col {
+    width: 60px;
+    min-width: 60px;
+    background: #1f2937;
+    color: #9ca3af;
+    font-weight: 600;
+    text-align: center;
+    border-right: 2px solid #374151;
+}
+
+.schedule-table td {
+    padding: 4px;
+    border-bottom: 1px solid #374151;
+    border-right: 1px solid #2d3748;
+    vertical-align: top;
+    min-height: 44px;
+    height: 44px;
+}
+
+.schedule-table td:last-child {
+    border-right: none;
+}
+
+.schedule-table tbody tr:hover {
+    background: rgba(96, 165, 250, 0.03);
+}
+
+.schedule-cell-occupied {
+    background: rgba(37, 99, 235, 0.08) !important;
+}
+
+.schedule-class-card {
+    background: #2563eb;
+    color: white;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    font-size: 10px;
+    line-height: 1.2;
+    transition: all 0.15s ease;
+    display: block;
+}
+
+.schedule-class-card:hover {
+    background: #1d4ed8;
+    transform: scale(1.03);
+}
+
+.schedule-class-card strong {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.schedule-class-card span {
+    display: block;
+    font-size: 9px;
+    color: #bfdbfe;
+    margin-top: 1px;
+}
