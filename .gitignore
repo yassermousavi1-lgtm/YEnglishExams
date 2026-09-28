@@ -1,0 +1,10 @@
+﻿exam.db
+journal.db
+exam_backup*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+*.log
