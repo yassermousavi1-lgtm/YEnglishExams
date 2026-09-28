@@ -272,9 +272,22 @@
                 .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
         }
 
+               function getDayLabel(date) {
+            // Compare calendar dates (not times) to label the shown day.
+            const today = new Date();
+            const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const shownStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const diffDays = Math.round((shownStart - todayStart) / (1000 * 60 * 60 * 24));
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Tomorrow';
+            if (diffDays === -1) return 'Yesterday';
+            return null; // No label for other days
+        }
+
         function renderMySchedule() {
             const todayName = getDayNameFromDate(currentTodayDate);
             const todaySessions = getSessionsForDay(todayName);
+            const dayLabel = getDayLabel(currentTodayDate);
 
             // Build the "Today" card
             let todayHtml = '';
@@ -335,7 +348,7 @@
                         <div class="today-header">
                             <button class="today-arrow" onclick="shiftToday(-1)">◀</button>
                             <div class="today-title">
-                                <span class="today-label">Today</span>
+                                ${dayLabel ? `<span class="today-label">${dayLabel}</span>` : ''}
                                 <span class="today-date">${formatDateNice(currentTodayDate)}</span>
                             </div>
                             <button class="today-arrow" onclick="shiftToday(1)">▶</button>
