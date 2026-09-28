@@ -1,0 +1,581 @@
+================================================================================
+                    YENGLISH EXAMS - COMPLETE PROJECT DOCUMENTATION
+================================================================================
+
+VERSION: 2.0 (Teacher Panel Included)
+LAST UPDATED: September 2026
+AUTHOR: Yasser Mousavi
+STATUS: Production Ready
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+YEnglish Exams is a complete Telegram-based English examination system for
+private English classes. It allows teachers to create exams, manage students,
+and send tests to Telegram groups without any coding knowledge.
+
+The system runs 24/7 on a free cloud server (PythonAnywhere) and is fully
+accessible through Telegram Mini Apps.
+
+================================================================================
+2. WHAT THE SYSTEM DOES
+================================================================================
+
+FOR TEACHERS:
+------------
+- View list of all students
+- Add new students with their Telegram User ID
+- View list of all exams
+- Create exams with JSON-formatted questions
+- Assign exams to groups
+- Send exams to Telegram groups
+- View student results and scores
+
+FOR STUDENTS:
+-------------
+- Open exams directly from Telegram group
+- Auto-authentication via Telegram
+- Answer questions one at a time
+- Navigate forward/backward
+- See progress bar
+- See countdown timer
+- Submit exam and see result immediately
+
+================================================================================
+3. COMPLETE FILE STRUCTURE
+================================================================================
+
+C:\Users\Yasser Mousavi\Desktop\YEnglishExams\
+│
+├── api.py                      → MAIN SERVER FILE (Flask application)
+├── database.py                 → Database schema and connection
+├── exam.db                     → SQLite database (all data)
+│
+├── mini_app/                   → Telegram Mini App files
+│   ├── index.html              → Student & Teacher interface (full panel)
+│   └── style.css               → Dark theme design
+│
+├── question_parser.py          → Parse AI-generated questions
+├── import_questions.py         → Import questions from text
+├── create_exam.py              → CLI tool to create exams
+├── assign_exam.py              → CLI tool to assign exams to groups
+├── send_exam.py                → CLI tool to send exams to groups
+├── add_group.py                → CLI tool to add groups
+├── add_student.py              → CLI tool to add students
+├── check_student.py            → CLI tool to view students
+├── check_results.py            → CLI tool to view results
+├── check_assignments.py        → CLI tool to view assignments
+├── test_submit.py              → Testing tool
+│
+├── start.bat                   → One-click Flask launcher
+├── ngrok.bat                   → One-click ngrok launcher
+├── start_all.bat               → One-click launcher for all services
+├── update.bat                  → One-click Git updater
+│
+├── requirements.txt            → Python dependencies
+├── .gitignore                  → Git ignore file
+└── wsgi.py                     → PythonAnywhere entry point
+
+================================================================================
+4. DATABASE STRUCTURE
+================================================================================
+
+DATABASE: exam.db
+
+TABLES:
+--------
+1. groups
+   - id (INTEGER PRIMARY KEY)
+   - telegram_group_id (INTEGER UNIQUE)
+   - name (TEXT)
+
+2. students
+   - id (INTEGER PRIMARY KEY)
+   - telegram_user_id (INTEGER UNIQUE)
+   - first_name (TEXT)
+   - last_name (TEXT)
+   - username (TEXT)
+   - group_id (INTEGER FOREIGN KEY)
+
+3. questions
+   - id (INTEGER PRIMARY KEY)
+   - question_text (TEXT)
+   - option_a (TEXT)
+   - option_b (TEXT)
+   - option_c (TEXT)
+   - option_d (TEXT)
+   - correct_answer (TEXT CHECK A/B/C/D)
+
+4. exams
+   - id (INTEGER PRIMARY KEY)
+   - title (TEXT)
+   - time_limit (INTEGER)
+
+5. exam_questions
+   - id (INTEGER PRIMARY KEY)
+   - exam_id (INTEGER FOREIGN KEY)
+   - question_id (INTEGER FOREIGN KEY)
+   - question_order (INTEGER)
+
+6. exam_assignments
+   - id (INTEGER PRIMARY KEY)
+   - exam_id (INTEGER FOREIGN KEY)
+   - group_id (INTEGER FOREIGN KEY)
+   - assigned_at (TIMESTAMP)
+
+7. results
+   - id (INTEGER PRIMARY KEY)
+   - student_id (INTEGER FOREIGN KEY)
+   - exam_id (INTEGER FOREIGN KEY)
+   - score (INTEGER)
+   - total_questions (INTEGER)
+   - started_at (TEXT)
+   - completed_at (TEXT)
+
+================================================================================
+5. HOW TO RUN THE SYSTEM
+================================================================================
+
+5.1 - LOCAL DEVELOPMENT (WITH NGROK)
+-------------------------------------
+
+Step 1: Open PowerShell
+Step 2: Navigate to project folder
+cd "C:\Users\Yasser Mousavi\Desktop\YEnglishExams"
+
+Step 3: Set environment variables
+$env:TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN"
+$env:TEACHER_TELEGRAM_ID="YOUR_TELEGRAM_ID"
+
+Step 4: Run Flask
+C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe api.py
+
+Step 5: Open a new PowerShell window and run ngrok
+ngrok http 5000
+
+Step 6: Copy the ngrok HTTPS URL
+Example: https://faucet-flaccid-okay.ngrok-free.dev
+
+Step 7: Set this URL in BotFather
+/setmenubutton → @YourBot → Edit URL → Paste ngrok URL
+
+Step 8: Test on Telegram
+Open your bot and click the menu button
+
+5.2 - PRODUCTION SERVER (PYTHONANYWHERE)
+----------------------------------------
+
+Step 1: Create account on PythonAnywhere
+https://www.pythonanywhere.com
+
+Step 2: Upload code to GitHub
+git init
+git add .
+git commit -m "first commit"
+git remote add origin https://github.com/yourusername/yourrepo.git
+git push -u origin main
+
+Step 3: In PythonAnywhere Bash console
+git clone https://github.com/yourusername/yourrepo.git
+
+Step 4: Create Web App
+- Web tab → Add a new web app
+- Choose Flask
+- Choose Python 3.10 or 3.11
+- Choose Manual Configuration
+- Set Source code: /home/yourusername/yourrepo
+- Set Working directory: /home/yourusername/yourrepo
+
+Step 5: Set WSGI file
+Edit WSGI configuration file and add:
+import sys
+import os
+path = '/home/yourusername/yourrepo'
+if path not in sys.path:
+    sys.path.append(path)
+os.chdir(path)
+from api import app as application
+
+Step 6: Install dependencies
+pip install flask requests python-telegram-bot --user
+
+Step 7: Set environment variables in wsgi.py
+os.environ['TELEGRAM_BOT_TOKEN'] = 'YOUR_TOKEN'
+os.environ['TEACHER_TELEGRAM_ID'] = 'YOUR_ID'
+
+Step 8: Reload Web App
+
+Step 9: Set URL in BotFather
+/setmenubutton → @YourBot → Edit URL
+Paste: https://yourusername.pythonanywhere.com
+
+Step 10: Test on Telegram
+
+================================================================================
+6. API ENDPOINTS
+================================================================================
+
+PUBLIC ENDPOINTS:
+-----------------
+GET  /                            → Serves Mini App (index.html)
+GET  /api                         → Health check
+GET  /api/me                      → Authenticate user and get role
+GET  /api/exam/<exam_id>          → Get exam info (student only)
+GET  /api/exam/<exam_id>/questions→ Get exam questions (no answers)
+POST /api/exam/submit             → Submit exam and grade
+
+TEACHER ENDPOINTS:
+-----------------
+GET    /api/teacher/students              → List all students
+POST   /api/teacher/students              → Add new student
+GET    /api/teacher/groups                → List all groups
+GET    /api/teacher/questions             → List all questions
+GET    /api/teacher/exams                 → List all exams
+GET    /api/teacher/assignments           → List all assignments
+GET    /api/teacher/results               → List all results
+POST   /api/teacher/exams_with_questions  → Create exam from JSON
+POST   /api/teacher/assign_exam           → Assign exam to group
+POST   /api/teacher/send_exam_by_exam_id  → Send exam to group
+
+================================================================================
+7. HOW TO USE THE TEACHER PANEL (IN TELEGRAM)
+================================================================================
+
+STEP 1: Open your bot in Telegram
+Bot username: @YEnglsihExamsbot
+
+STEP 2: Click the "Start Exam" button
+This opens the Teacher Panel Mini App
+
+STEP 3: Available actions in the panel:
+
+7.1 - VIEW STUDENTS
+Click "👥 Students" → See all registered students
+
+7.2 - ADD STUDENT
+Click "➕ Add Student" → Fill in the form
+- First Name: Student's name
+- Telegram User ID: Get from @userinfobot
+- Group ID: 1 (for Test's English class)
+
+7.3 - VIEW EXAMS
+Click "📝 Exams" → See all created exams with their ID
+
+7.4 - CREATE EXAM
+Click "📝 Create Exam" → Fill in:
+- Exam Title: Name of the exam
+- Total Time: Duration in minutes
+- Number of Questions: Count of questions
+- JSON Field: Paste questions in JSON format
+
+JSON Format Example:
+[
+  {
+    "question_text": "What is the capital of France?",
+    "option_a": "Berlin",
+    "option_b": "Madrid",
+    "option_c": "Paris",
+    "option_d": "Rome",
+    "correct_answer": "C"
+  }
+]
+
+7.5 - SEND EXAM
+Click "📤 Send Exam" → See all exams
+- If not assigned: Click "📌 Assign & Send" → Exam sent to group
+- If already assigned: Click "📤 Send" → Exam sent to group
+
+7.6 - VIEW RESULTS
+Click "📊 Results" → See all student exam results
+
+================================================================================
+8. HOW TO GET STUDENT TELEGRAM USER ID
+================================================================================
+
+Each student must do this once:
+
+Step 1: Open Telegram
+Step 2: Search for @userinfobot
+Step 3: Send command: /start
+Step 4: The bot replies with a number: "Your user ID: 123456789"
+
+Give this number to the teacher to register the student.
+
+================================================================================
+9. HOW TO CREATE QUESTIONS USING AI
+================================================================================
+
+STEP 1: Ask ChatGPT or Claude to generate questions in JSON format
+
+Prompt example:
+"Generate 5 multiple-choice questions about Present Simple tense in JSON format:
+[
+  {
+    "question_text": "She _____ to school every day.",
+    "option_a": "go",
+    "option_b": "goes",
+    "option_c": "going",
+    "option_d": "gone",
+    "correct_answer": "B"
+  }
+]"
+
+STEP 2: Copy the JSON output
+
+STEP 3: In the Teacher Panel, click "📝 Create Exam"
+
+STEP 4: Fill in:
+- Exam Title: e.g., "Present Simple Quiz"
+- Total Time: e.g., 5
+- Number of Questions: e.g., 5
+- Paste the JSON in the text area
+
+STEP 5: Click "Create Exam"
+
+================================================================================
+10. HOW TO SEND EXAM TO STUDENTS
+================================================================================
+
+METHOD 1: Send to entire group
+--------------------------------
+1. In Teacher Panel, click "📤 Send Exam"
+2. Find the exam
+3. Click "📌 Assign & Send" or "📤 Send"
+4. The exam appears in the group with a "Start Exam" button
+
+METHOD 2: Send to individual student
+-------------------------------------
+1. Find the exam ID from "📝 Exams"
+2. Create the deep link:
+   https://t.me/YEnglsihExamsbot?startapp=exam_X
+   (Replace X with exam ID)
+3. Send the link privately to the student
+4. Student clicks the link and starts the exam
+
+================================================================================
+11. WHAT HAS BEEN DONE SO FAR (PROJECT HISTORY)
+================================================================================
+
+PHASE 1 - BASIC SETUP
+---------------------
+✅ Flask server created (api.py)
+✅ Database structure designed (database.py)
+✅ Telegram authentication implemented
+✅ Mini App created (index.html, style.css)
+✅ Question parser implemented (question_parser.py)
+✅ Import/Export tools created
+✅ CLI tools for management (add_student, create_exam, send_exam, etc.)
+
+PHASE 2 - DEPLOYMENT
+--------------------
+✅ GitHub repository created
+✅ PythonAnywhere deployment completed
+✅ ngrok tunneling configured (development only)
+✅ Environment variables configured
+✅ Domain: YEnglishExams.pythonanywhere.com
+
+PHASE 3 - TEACHER PANEL
+-----------------------
+✅ Mini App upgraded with Teacher Panel
+✅ Role detection (teacher vs student)
+✅ Student management (view and add)
+✅ Exam management (view and create with JSON)
+✅ Results viewing
+✅ Send exam functionality (assign + send)
+✅ Exam ID display in exams list
+
+PHASE 4 - FINAL TOUCHES
+-----------------------
+✅ Full integration with PythonAnywhere
+✅ Auto-deploy via GitHub
+✅ One-click update script (update.bat)
+✅ Complete documentation
+
+================================================================================
+12. TECHNICAL SPECIFICATIONS
+================================================================================
+
+BACKEND:
+--------
+- Framework: Flask (Python 3.13.15)
+- Database: SQLite (exam.db)
+- API: RESTful JSON endpoints
+- Authentication: Telegram initData validation
+
+FRONTEND:
+---------
+- Type: Telegram Mini App (HTML/CSS/JS)
+- Design: Mobile-first, dark theme
+- Features: Navigation, Timer, Progress, Results
+
+SERVER:
+-------
+- Local: Flask on port 5000
+- Production: PythonAnywhere (free tier)
+- Tunnel: ngrok (local development only)
+
+TELEGRAM:
+---------
+- Bot: @YEnglsihExamsbot
+- Mini App URL: https://YEnglishExams.pythonanywhere.com
+- Deep Link format: https://t.me/YEnglsihExamsbot?startapp=exam_X
+
+================================================================================
+13. ENVIRONMENT VARIABLES
+================================================================================
+
+REQUIRED:
+---------
+TELEGRAM_BOT_TOKEN    → Your Telegram bot token
+TEACHER_TELEGRAM_ID   → Your numeric Telegram ID
+
+SETTING IN POWERSHELL (Local):
+------------------------------
+$env:TELEGRAM_BOT_TOKEN="8909221623:AAE0Y0Joy7w2luQAUncMn6-0Sk9lL4AfVY0"
+$env:TEACHER_TELEGRAM_ID="123456789"
+
+SETTING IN PYTHONANYWHERE (wsgi.py):
+-----------------------------------
+os.environ['TELEGRAM_BOT_TOKEN'] = '8909221623:AAE0Y0Joy7w2luQAUncMn6-0Sk9lL4AfVY0'
+os.environ['TEACHER_TELEGRAM_ID'] = '123456789'
+
+================================================================================
+14. HOW TO UPDATE THE SYSTEM
+================================================================================
+
+LOCAL - One-click update:
+------------------------
+1. Make changes to any file
+2. Double-click update.bat
+
+This runs:
+git add .
+git commit -m "Update"
+git push
+
+PRODUCTION - PythonAnywhere:
+---------------------------
+1. Open Bash console in PythonAnywhere
+2. cd /home/YEnglishExams/YEnglishExams
+3. git pull origin main
+4. Go to Web tab → Click Reload
+
+================================================================================
+15. CURRENT DATA
+================================================================================
+
+TELEGRAM BOT:
+------------
+Username: @YEnglsihExamsbot
+
+GROUPS:
+-------
+ID: 1  | Name: Test's English class  | Telegram ID: -5496449839
+
+STUDENTS:
+---------
+ID: 1  | Name: Yasser  | Telegram ID: 231716006  | Group: 1
+ID: 2  | Name: Mamad   | Telegram ID: 5171156065 | Group: 1
+
+EXAMS:
+------
+ID: 1  | Title: Present Simple Test    | Time: 15 min
+ID: 2  | Title: Present Simple Quiz    | Time: 5 min
+ID: 3  | Title: Grammar Test Unit 1    | Time: 10 min
+
+TEACHER:
+--------
+Telegram ID: [Your numeric ID]
+
+================================================================================
+16. TROUBLESHOOTING
+================================================================================
+
+PROBLEM: "Telegram Bot Token is not configured"
+SOLUTION: Set TELEGRAM_BOT_TOKEN in environment variables or wsgi.py
+
+PROBLEM: "Exam ID was not received from Telegram"
+SOLUTION: Use deep link with startapp parameter
+         Example: https://t.me/YEnglsihExamsbot?startapp=exam_2
+
+PROBLEM: "No module named telegram"
+SOLUTION: Run: pip install python-telegram-bot --user
+
+PROBLEM: ngrok shows "ERR_NGROK_3200"
+SOLUTION: ngrok has stopped. Run ngrok http 5000 again
+
+PROBLEM: Git shows "Author identity unknown"
+SOLUTION: Set name and email:
+         git config --global user.name "Your Name"
+         git config --global user.email "you@example.com"
+
+PROBLEM: Web app not showing changes
+SOLUTION: Go to Web tab → Click Reload
+
+================================================================================
+17. IMPORTANT SECURITY NOTES
+================================================================================
+
+✓ Never put the bot token in source code
+✓ Always use environment variables for secrets
+✓ correct_answer is NEVER sent to the client
+✓ All grading is done server-side
+✓ Student identity is derived from Telegram, never from browser input
+✓ Teacher endpoints are protected by role check
+
+================================================================================
+18. FUTURE IMPROVEMENTS (PHASE 3)
+================================================================================
+
+- Select group when sending exam (currently hardcoded to group ID 1)
+- Edit/Delete questions from teacher panel
+- Edit/Delete students from teacher panel
+- Edit exam settings after creation
+- Export results to CSV/Excel
+- Multiple attempt policy for students
+- Anti-cheating measures
+- Student history dashboard
+- Question tags and categories
+- Audio/Video questions
+- Advanced analytics and charts
+
+================================================================================
+19. CONTACT & SUPPORT
+================================================================================
+
+Project: YEnglish Exams
+Teacher: Yasser Mousavi
+Bot: @YEnglsihExamsbot
+Server: https://YEnglishExams.pythonanywhere.com
+GitHub: https://github.com/yassermousavi1-lgtm/YEnglishExams
+
+All configuration and data are stored on PythonAnywhere cloud server.
+The system runs 24/7 without any local computer required.
+
+================================================================================
+20. QUICK REFERENCE - COMMANDS
+================================================================================
+
+POWERSHELL (Local):
+------------------
+cd "C:\Users\Yasser Mousavi\Desktop\YEnglishExams"
+$env:TELEGRAM_BOT_TOKEN="YOUR_TOKEN"
+C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe api.py
+ngrok http 5000
+update.bat
+
+PYTHONANYWHERE (Bash):
+---------------------
+cd /home/YEnglishExams/YEnglishExams
+git pull origin main
+pip install python-telegram-bot --user
+
+TELEGRAM BOTFATHER:
+------------------
+/setmenubutton → Select bot → Edit URL
+Paste: https://YEnglishExams.pythonanywhere.com
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
