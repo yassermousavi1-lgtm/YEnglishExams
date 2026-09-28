@@ -1231,6 +1231,131 @@ def teacher_result_details(result_id):
         connection.close()
 
 # ============================================================
+# CLASS GROUPS ENDPOINTS
+# ============================================================
+
+@app.route("/api/teacher/class_groups", methods=["GET"])
+def teacher_get_class_groups():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT id, name, color, notes, created_at
+            FROM class_groups
+            ORDER BY name ASC
+        """)
+        rows = cursor.fetchall()
+        groups_list = []
+        for r in rows:
+            groups_list.append({
+                "id": r["id"],
+                "name": r["name"],
+                "color": r["color"] or '#2563eb',
+                "notes": r["notes"],
+                "created_at": r["created_at"]
+            })
+        return jsonify({"status": "success", "class_groups": groups_list, "total": len(groups_list)})
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/class_groups", methods=["POST"])
+def teacher_add_class_group():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    name = data.get("name", "").strip()
+    color = data.get("color", "#2563eb").strip()
+    notes = data.get("notes", "").strip()
+    if not name:
+        return jsonify({"status": "error", "message": "Class name is required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO class_groups (name, color, notes)
+            VALUES (?, ?, ?)
+        """, (name, color, notes))
+        connection.commit()
+        return jsonify({"status": "success", "message": "Class group added successfully.", "id": cursor.lastrowid})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/class_groups/<int:group_id>", methods=["PUT"])
+def teacher_update_class_group(group_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+    name = data.get("name", "").strip()
+    color = data.get("color", "#2563eb").strip()
+    notes = data.get("notes", "").strip()
+    if not name:
+        return jsonify({"status": "error", "message": "Class name is required."}), 400
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            UPDATE class_groups
+            SET name = ?, color = ?, notes = ?
+            WHERE id = ?
+        """, (name, color, notes, group_id))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Class group not found."}), 404
+        return jsonify({"status": "success", "message": "Class group updated successfully."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/class_groups/<int:group_id>", methods=["DELETE"])
+def teacher_delete_class_group(group_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("DELETE FROM class_groups WHERE id = ?", (group_id,))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Class group not found."}), 404
+        return jsonify({"status": "success", "message": "Class group and its sessions deleted."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+# ============================================================
 # CLASS SCHEDULE ENDPOINTS
 # ============================================================
 
@@ -1246,10 +1371,20 @@ def teacher_get_schedule():
     try:
         cursor = connection.cursor()
         cursor.execute("""
-            SELECT id, day_of_week, student_name, start_time, end_time, notes, created_at
-            FROM class_schedule
+            SELECT 
+                cs.id,
+                cs.class_group_id,
+                cs.day_of_week,
+                cs.start_time,
+                cs.end_time,
+                cs.notes,
+                cs.created_at,
+                cg.name AS class_name,
+                cg.color AS class_color
+            FROM class_schedule cs
+            JOIN class_groups cg ON cg.id = cs.class_group_id
             ORDER BY 
-                CASE day_of_week
+                CASE cs.day_of_week
                     WHEN 'Monday' THEN 1
                     WHEN 'Tuesday' THEN 2
                     WHEN 'Wednesday' THEN 3
@@ -1258,15 +1393,17 @@ def teacher_get_schedule():
                     WHEN 'Saturday' THEN 6
                     WHEN 'Sunday' THEN 7
                 END,
-                start_time ASC
+                cs.start_time ASC
         """)
         rows = cursor.fetchall()
         schedule_list = []
         for r in rows:
             schedule_list.append({
                 "id": r["id"],
+                "class_group_id": r["class_group_id"],
+                "class_name": r["class_name"],
+                "class_color": r["class_color"] or '#2563eb',
                 "day_of_week": r["day_of_week"],
-                "student_name": r["student_name"],
                 "start_time": r["start_time"],
                 "end_time": r["end_time"],
                 "notes": r["notes"],
@@ -1288,12 +1425,12 @@ def teacher_add_schedule():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"status": "error", "message": "Invalid request."}), 400
+    class_group_id = data.get("class_group_id")
     day_of_week = data.get("day_of_week", "").strip()
-    student_name = data.get("student_name", "").strip()
     start_time = data.get("start_time", "").strip()
     end_time = data.get("end_time", "").strip()
     notes = data.get("notes", "").strip()
-    if not day_of_week or not student_name or not start_time or not end_time:
+    if not class_group_id or not day_of_week or not start_time or not end_time:
         return jsonify({"status": "error", "message": "All required fields must be filled."}), 400
     valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     if day_of_week not in valid_days:
@@ -1302,11 +1439,11 @@ def teacher_add_schedule():
     cursor = connection.cursor()
     try:
         cursor.execute("""
-            INSERT INTO class_schedule (day_of_week, student_name, start_time, end_time, notes)
+            INSERT INTO class_schedule (class_group_id, day_of_week, start_time, end_time, notes)
             VALUES (?, ?, ?, ?, ?)
-        """, (day_of_week, student_name, start_time, end_time, notes))
+        """, (class_group_id, day_of_week, start_time, end_time, notes))
         connection.commit()
-        return jsonify({"status": "success", "message": "Class added successfully.", "id": cursor.lastrowid})
+        return jsonify({"status": "success", "message": "Session added successfully.", "id": cursor.lastrowid})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -1325,25 +1462,25 @@ def teacher_update_schedule(schedule_id):
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"status": "error", "message": "Invalid request."}), 400
+    class_group_id = data.get("class_group_id")
     day_of_week = data.get("day_of_week", "").strip()
-    student_name = data.get("student_name", "").strip()
     start_time = data.get("start_time", "").strip()
     end_time = data.get("end_time", "").strip()
     notes = data.get("notes", "").strip()
-    if not day_of_week or not student_name or not start_time or not end_time:
+    if not class_group_id or not day_of_week or not start_time or not end_time:
         return jsonify({"status": "error", "message": "All required fields must be filled."}), 400
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
         cursor.execute("""
             UPDATE class_schedule
-            SET day_of_week = ?, student_name = ?, start_time = ?, end_time = ?, notes = ?
+            SET class_group_id = ?, day_of_week = ?, start_time = ?, end_time = ?, notes = ?
             WHERE id = ?
-        """, (day_of_week, student_name, start_time, end_time, notes, schedule_id))
+        """, (class_group_id, day_of_week, start_time, end_time, notes, schedule_id))
         connection.commit()
         if cursor.rowcount == 0:
-            return jsonify({"status": "error", "message": "Class not found."}), 404
-        return jsonify({"status": "success", "message": "Class updated successfully."})
+            return jsonify({"status": "error", "message": "Session not found."}), 404
+        return jsonify({"status": "success", "message": "Session updated successfully."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -1365,15 +1502,13 @@ def teacher_delete_schedule(schedule_id):
         cursor.execute("DELETE FROM class_schedule WHERE id = ?", (schedule_id,))
         connection.commit()
         if cursor.rowcount == 0:
-            return jsonify({"status": "error", "message": "Class not found."}), 404
-        return jsonify({"status": "success", "message": "Class deleted successfully."})
+            return jsonify({"status": "error", "message": "Session not found."}), 404
+        return jsonify({"status": "success", "message": "Session deleted successfully."})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
     finally:
         connection.close()
-
-
 
 if __name__ == "__main__":
     print()

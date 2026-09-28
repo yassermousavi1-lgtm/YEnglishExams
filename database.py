@@ -332,27 +332,49 @@ def create_database():
     """)
 
     # ========================================================
+    # CLASS GROUPS
     # ========================================================
+    #
+    # Each class group represents one private student.
+    #
+    # color: hex color code (e.g. '#2563eb') for visual distinction
+    # ========================================================
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS class_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            name TEXT NOT NULL,
+
+            color TEXT DEFAULT '#2563eb',
+
+            notes TEXT,
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # ========================================================
     # CLASS SCHEDULE
     # ========================================================
     #
     # Weekly schedule of private classes.
     #
-    # Each row represents one class session for a student.
+    # Each row represents one session of a class group.
     #
-    # day_of_week:  'Monday', 'Tuesday', ..., 'Sunday'
-    # start_time:   '16:00'
-    # end_time:     '17:00'
+    # class_group_id: references class_groups(id)
+    # day_of_week:    'Monday', 'Tuesday', ..., 'Sunday'
+    # start_time:     '16:15'
+    # end_time:       '17:45'
     # ========================================================
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS class_schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-            day_of_week TEXT NOT NULL,
+            class_group_id INTEGER NOT NULL,
 
-            student_name TEXT NOT NULL,
+            day_of_week TEXT NOT NULL,
 
             start_time TEXT NOT NULL,
 
@@ -360,9 +382,16 @@ def create_database():
 
             notes TEXT,
 
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+            FOREIGN KEY (class_group_id)
+                REFERENCES class_groups(id)
+                ON DELETE CASCADE
         )
-    """)
+    """) 
+
+
+
     connection.commit()
 
     connection.close()

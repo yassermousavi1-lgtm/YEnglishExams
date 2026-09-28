@@ -199,6 +199,10 @@
                                 <span style="color: #9ca3af; font-size: 16px;">▸</span>
                                 <span>My Classes</span>
                             </button>
+                            <button class="academic-menu-item" onclick="showManageClassGroups()">
+                                <span style="color: #9ca3af; font-size: 16px;">▸</span>
+                                <span>Manage Class Groups</span>
+                            </button>
                         </div>
                     </div>
 
@@ -1043,9 +1047,6 @@
                 window.openCategories = {};
             }
 
-            // ========================================================
-            // جستجوی دانشجو → پیدا کردن آزمون‌های assign شده به گروه او
-            // ========================================================
             let matchedStudents = [];
             let studentExams = [];
 
@@ -1096,9 +1097,6 @@
                     </div>
             `;
 
-            // ========================================================
-            // نمایش آزمون‌های assign شده به دانشجویان پیدا شده
-            // ========================================================
             if (matchedStudents.length > 0) {
                 html += `
                     <div style="margin-bottom: 20px;">
@@ -1132,9 +1130,6 @@
                 html += `</div>`;
             }
 
-            // ========================================================
-            // نمایش همه آزمون‌ها (فیلتر شده)
-            // ========================================================
             html += `
                     <p style="color: #9ca3af; font-size: 13px; margin-bottom: 12px;">
                         Showing ${filteredExams.length} of ${window.allExams.length} exams
@@ -1331,41 +1326,210 @@
         }
 
         // ============================================================
+        // CLASS GROUPS MANAGEMENT
+        // ============================================================
+
+        async function showManageClassGroups() {
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading class groups...</p></div>`;
+            try {
+                const data = await fetchAPI('/api/teacher/class_groups');
+                if (data.status !== 'success') {
+                    showError(data.message || 'Failed to load class groups.');
+                    return;
+                }
+                window.classGroupsData = data.class_groups || [];
+
+                let html = `
+                    <div style="padding: 20px;">
+                        <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
+                        <h2 class="academic-page-title">👥 Manage Class Groups</h2>
+                        
+                        <button class="academic-primary-btn" style="width: 100%; margin-bottom: 16px;" onclick="showAddClassGroupForm()">➕ Add Class Group</button>
+                `;
+
+                if (window.classGroupsData.length === 0) {
+                    html += `<p style="color: #9ca3af; text-align: center; padding: 20px;">No class groups yet.</p>`;
+                } else {
+                    window.classGroupsData.forEach(g => {
+                        html += `
+                            <div class="academic-card" style="cursor: pointer; border-left: 4px solid ${g.color};" onclick="showEditClassGroupForm(${g.id})">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: #f9fafb;">${g.name}</strong>
+                                        ${g.notes ? `<span style="color: #9ca3af; font-size: 13px; display: block;">${g.notes}</span>` : ''}
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="display: inline-block; width: 20px; height: 20px; background: ${g.color}; border-radius: 50%;"></span>
+                                        <span style="color: #9ca3af; font-size: 18px;">▸</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                html += `</div>`;
+                document.querySelector('.exam-card').innerHTML = html;
+            } catch (error) {
+                showError('Error loading class groups.');
+            }
+        }
+
+        function showAddClassGroupForm() {
+            renderClassGroupForm(null);
+        }
+
+        function showEditClassGroupForm(id) {
+            const item = window.classGroupsData.find(g => g.id === id);
+            if (!item) { alert('Class group not found.'); return; }
+            renderClassGroupForm(item);
+        }
+
+        function renderClassGroupForm(item) {
+            const isEdit = item !== null;
+            const nameValue = isEdit ? item.name : '';
+            const colorValue = isEdit ? item.color : '#2563eb';
+            const notesValue = isEdit ? (item.notes || '') : '';
+
+            let html = `
+                <div style="padding: 20px;">
+                    <button class="academic-back-button" onclick="showManageClassGroups()">▸ Back</button>
+                    <h2 class="academic-page-title">${isEdit ? '✏️ Edit Class Group' : '➕ Add Class Group'}</h2>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <label style="color: #9ca3af; font-size: 13px;">Class Name</label>
+                        <input id="classGroupName" type="text" placeholder="Student Name" class="academic-input" value="${nameValue}">
+                        
+                        <label style="color: #9ca3af; font-size: 13px;">Color</label>
+                        <input id="classGroupColor" type="color" value="${colorValue}" style="width: 100%; height: 50px; border-radius: 8px; border: 1px solid #374151; background: #111827; cursor: pointer;">
+                        
+                        <label style="color: #9ca3af; font-size: 13px;">Notes (optional)</label>
+                        <input id="classGroupNotes" type="text" placeholder="Notes" class="academic-input" value="${notesValue}">
+                        
+                        <button class="academic-primary-btn" style="margin-top: 8px;" onclick="saveClassGroupForm(${isEdit ? item.id : 'null'})">
+                            ${isEdit ? 'Save Changes' : 'Add Class Group'}
+                        </button>
+                        
+                        ${isEdit ? `<button class="academic-secondary-btn" style="margin-top: 4px;" onclick="deleteClassGroup(${item.id})">🗑️ Delete Class Group</button>` : ''}
+                    </div>
+                    
+                    <div id="classGroupFormStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                </div>
+            `;
+            document.querySelector('.exam-card').innerHTML = html;
+        }
+
+        async function saveClassGroupForm(id) {
+            const name = document.getElementById('classGroupName').value.trim();
+            const color = document.getElementById('classGroupColor').value;
+            const notes = document.getElementById('classGroupNotes').value.trim();
+
+            if (!name) {
+                document.getElementById('classGroupFormStatus').textContent = '⚠️ Class name is required.';
+                return;
+            }
+
+            document.getElementById('classGroupFormStatus').textContent = 'Saving...';
+
+            try {
+                const url = id ? `/api/teacher/class_groups/${id}` : '/api/teacher/class_groups';
+                const method = id ? 'PUT' : 'POST';
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        color: color,
+                        notes: notes
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showManageClassGroups();
+                } else {
+                    document.getElementById('classGroupFormStatus').textContent = '❌ ' + (data.message || 'Failed to save.');
+                }
+            } catch (error) {
+                document.getElementById('classGroupFormStatus').textContent = '❌ Error saving class group.';
+            }
+        }
+
+        async function deleteClassGroup(id) {
+            if (!confirm('Delete this class group? All its sessions will be deleted too.')) return;
+            try {
+                const response = await fetch(`/api/teacher/class_groups/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Telegram-Init-Data': telegram?.initData || '' }
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showManageClassGroups();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to delete.'));
+                }
+            } catch (error) {
+                alert('❌ Error deleting class group.');
+            }
+        }
+
+        // ============================================================
         // CLASS SCHEDULE
         // ============================================================
 
         const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         const DAYS_SHORT = { 'Monday': 'MON', 'Tuesday': 'TUE', 'Wednesday': 'WED', 'Thursday': 'THU', 'Friday': 'FRI', 'Saturday': 'SAT', 'Sunday': 'SUN' };
-        const HOURS = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
 
-        // ---------- Show Class Schedule ----------
         async function showClassSchedule() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading schedule...</p></div>`;
             try {
-                const data = await fetchAPI('/api/teacher/schedule');
-                if (data.status !== 'success') {
-                    showError(data.message || 'Failed to load schedule.');
+                const [scheduleData, groupsData] = await Promise.all([
+                    fetchAPI('/api/teacher/schedule'),
+                    fetchAPI('/api/teacher/class_groups')
+                ]);
+                if (scheduleData.status !== 'success' || groupsData.status !== 'success') {
+                    showError('Failed to load schedule data.');
                     return;
                 }
-                window.scheduleData = data.schedule || [];
+                window.scheduleData = scheduleData.schedule || [];
+                window.classGroupsData = groupsData.class_groups || [];
                 renderScheduleGrid();
             } catch (error) {
                 showError('Error loading schedule.');
             }
         }
 
-        // ---------- Render Schedule Grid ----------
+        function timeToMinutes(timeStr) {
+            const parts = timeStr.split(':');
+            return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+        }
+
         function renderScheduleGrid() {
+            // جمع‌آوری تمام زمان‌های شروع و پایان منحصر به فرد
+            const uniqueTimes = new Set();
+            window.scheduleData.forEach(item => {
+                uniqueTimes.add(item.start_time);
+                uniqueTimes.add(item.end_time);
+            });
+
+            // مرتب‌سازی بر اساس زمان
+            const sortedTimes = Array.from(uniqueTimes).sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+
+            // اگر هیچ کلاسی نیست، جدول خالی نشان بده
+            const displayTimes = sortedTimes.length > 0 ? sortedTimes : ['08:00', '09:00', '10:00'];
+
+            // نقشه‌گذاری: برای هر روز و هر زمان شروع، لیست کلاس‌ها
             const grid = {};
             DAYS_OF_WEEK.forEach(day => {
                 grid[day] = {};
-                HOURS.forEach(hour => { grid[day][hour] = []; });
+                displayTimes.forEach(t => { grid[day][t] = []; });
             });
 
             window.scheduleData.forEach(item => {
-                const hour = item.start_time.substring(0, 2) + ':00';
-                if (grid[item.day_of_week] && grid[item.day_of_week][hour]) {
-                    grid[item.day_of_week][hour].push(item);
+                if (grid[item.day_of_week] && grid[item.day_of_week][item.start_time]) {
+                    grid[item.day_of_week][item.start_time].push(item);
                 }
             });
 
@@ -1374,7 +1538,7 @@
                     <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
                     <h2 class="academic-page-title">📅 My Class Schedule</h2>
                     
-                    <button class="academic-primary-btn" style="width: 100%; margin-bottom: 16px;" onclick="showAddClassForm()">➕ Add Class</button>
+                    <button class="academic-primary-btn" style="width: 100%; margin-bottom: 16px;" onclick="showAddClassForm()">➕ Add Session</button>
             `;
 
             if (window.scheduleData.length === 0) {
@@ -1396,18 +1560,18 @@
                             <tbody>
                 `;
 
-                HOURS.forEach(hour => {
+                displayTimes.forEach(time => {
                     html += `<tr>`;
-                    html += `<td class="schedule-time-col">${hour}</td>`;
+                    html += `<td class="schedule-time-col">${time}</td>`;
                     DAYS_OF_WEEK.forEach(day => {
-                        const classes = grid[day][hour];
+                        const classes = grid[day][time] || [];
                         if (classes.length > 0) {
                             html += `<td class="schedule-cell-occupied">`;
                             classes.forEach(c => {
                                 html += `
-                                    <div class="schedule-class-card" onclick="showEditClassForm(${c.id})">
-                                        <strong>${c.student_name}</strong>
-                                        <span>${c.start_time}-${c.end_time}</span>
+                                    <div class="schedule-class-card" style="background: ${c.class_color};" onclick="showEditClassForm(${c.id})">
+                                        <strong>${c.class_name}</strong>
+                                        <span>${c.start_time} - ${c.end_time}</span>
                                     </div>
                                 `;
                             });
@@ -1430,23 +1594,20 @@
             document.querySelector('.exam-card').innerHTML = html;
         }
 
-        // ---------- Show Add Class Form ----------
         function showAddClassForm() {
             renderClassForm(null);
         }
 
-        // ---------- Show Edit Class Form ----------
         function showEditClassForm(id) {
             const item = window.scheduleData.find(s => s.id === id);
-            if (!item) { alert('Class not found.'); return; }
+            if (!item) { alert('Session not found.'); return; }
             renderClassForm(item);
         }
 
-        // ---------- Render Class Form ----------
         function renderClassForm(item) {
             const isEdit = item !== null;
             const dayValue = isEdit ? item.day_of_week : 'Monday';
-            const nameValue = isEdit ? item.student_name : '';
+            const groupValue = isEdit ? item.class_group_id : (window.classGroupsData[0]?.id || '');
             const startValue = isEdit ? item.start_time : '16:00';
             const endValue = isEdit ? item.end_time : '17:00';
             const notesValue = isEdit ? (item.notes || '') : '';
@@ -1457,38 +1618,46 @@
                 dayOptions += `<option value="${d}" ${selected}>${d}</option>`;
             });
 
+            let groupOptions = '';
+            if (window.classGroupsData.length === 0) {
+                groupOptions = `<option value="">— No class groups. Please add one first —</option>`;
+            } else {
+                window.classGroupsData.forEach(g => {
+                    const selected = g.id === groupValue ? 'selected' : '';
+                    groupOptions += `<option value="${g.id}" ${selected}>${g.name}</option>`;
+                });
+            }
+
             let html = `
                 <div style="padding: 20px;">
                     <button class="academic-back-button" onclick="showClassSchedule()">▸ Back</button>
-                    <h2 class="academic-page-title">${isEdit ? '✏️ Edit Class' : '➕ Add Class'}</h2>
+                    <h2 class="academic-page-title">${isEdit ? '✏️ Edit Session' : '➕ Add Session'}</h2>
                     
                     <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <label style="color: #9ca3af; font-size: 13px;">Class Group</label>
+                        <select id="classGroup" class="academic-filter-select">
+                            ${groupOptions}
+                        </select>
+                        
                         <label style="color: #9ca3af; font-size: 13px;">Day of Week</label>
                         <select id="classDay" class="academic-filter-select">
                             ${dayOptions}
                         </select>
                         
-                        <label style="color: #9ca3af; font-size: 13px;">Student Name</label>
-                        <input id="className" type="text" placeholder="Student Name" class="academic-input" value="${nameValue}">
+                        <label style="color: #9ca3af; font-size: 13px;">Start Time (e.g. 16:15)</label>
+                        <input id="classStart" type="time" class="academic-input" value="${startValue}">
                         
-                        <label style="color: #9ca3af; font-size: 13px;">Start Time</label>
-                        <select id="classStart" class="academic-filter-select">
-                            ${HOURS.map(h => `<option value="${h}" ${h === startValue ? 'selected' : ''}>${h}</option>`).join('')}
-                        </select>
-                        
-                        <label style="color: #9ca3af; font-size: 13px;">End Time</label>
-                        <select id="classEnd" class="academic-filter-select">
-                            ${HOURS.map(h => `<option value="${h}" ${h === endValue ? 'selected' : ''}>${h}</option>`).join('')}
-                        </select>
+                        <label style="color: #9ca3af; font-size: 13px;">End Time (e.g. 17:45)</label>
+                        <input id="classEnd" type="time" class="academic-input" value="${endValue}">
                         
                         <label style="color: #9ca3af; font-size: 13px;">Notes (optional)</label>
                         <input id="classNotes" type="text" placeholder="Notes" class="academic-input" value="${notesValue}">
                         
                         <button class="academic-primary-btn" style="margin-top: 8px;" onclick="saveClassForm(${isEdit ? item.id : 'null'})">
-                            ${isEdit ? 'Save Changes' : 'Add Class'}
+                            ${isEdit ? 'Save Changes' : 'Add Session'}
                         </button>
                         
-                        ${isEdit ? `<button class="academic-secondary-btn" style="margin-top: 4px;" onclick="deleteClass(${item.id})">🗑️ Delete Class</button>` : ''}
+                        ${isEdit ? `<button class="academic-secondary-btn" style="margin-top: 4px;" onclick="deleteClass(${item.id})">🗑️ Delete Session</button>` : ''}
                     </div>
                     
                     <div id="classFormStatus" style="margin-top: 12px; color: #9ca3af;"></div>
@@ -1497,20 +1666,24 @@
             document.querySelector('.exam-card').innerHTML = html;
         }
 
-        // ---------- Save Class Form ----------
         async function saveClassForm(id) {
+            const classGroupId = document.getElementById('classGroup').value;
             const day = document.getElementById('classDay').value;
-            const name = document.getElementById('className').value.trim();
             const startTime = document.getElementById('classStart').value;
             const endTime = document.getElementById('classEnd').value;
             const notes = document.getElementById('classNotes').value.trim();
 
-            if (!name) {
-                document.getElementById('classFormStatus').textContent = '⚠️ Student name is required.';
+            if (!classGroupId) {
+                document.getElementById('classFormStatus').textContent = '⚠️ Please select a class group.';
                 return;
             }
 
-            if (startTime >= endTime) {
+            if (!startTime || !endTime) {
+                document.getElementById('classFormStatus').textContent = '⚠️ Please enter both start and end times.';
+                return;
+            }
+
+            if (timeToMinutes(startTime) >= timeToMinutes(endTime)) {
                 document.getElementById('classFormStatus').textContent = '⚠️ End time must be after start time.';
                 return;
             }
@@ -1527,8 +1700,8 @@
                         'X-Telegram-Init-Data': telegram?.initData || ''
                     },
                     body: JSON.stringify({
+                        class_group_id: parseInt(classGroupId),
                         day_of_week: day,
-                        student_name: name,
                         start_time: startTime,
                         end_time: endTime,
                         notes: notes
@@ -1541,13 +1714,12 @@
                     document.getElementById('classFormStatus').textContent = '❌ ' + (data.message || 'Failed to save.');
                 }
             } catch (error) {
-                document.getElementById('classFormStatus').textContent = '❌ Error saving class.';
+                document.getElementById('classFormStatus').textContent = '❌ Error saving session.';
             }
         }
 
-        // ---------- Delete Class ----------
         async function deleteClass(id) {
-            if (!confirm('Delete this class?')) return;
+            if (!confirm('Delete this session?')) return;
             try {
                 const response = await fetch(`/api/teacher/schedule/${id}`, {
                     method: 'DELETE',
@@ -1560,7 +1732,7 @@
                     alert('❌ ' + (data.message || 'Failed to delete.'));
                 }
             } catch (error) {
-                alert('❌ Error deleting class.');
+                alert('❌ Error deleting session.');
             }
         }
 
