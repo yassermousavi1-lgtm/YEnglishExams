@@ -141,6 +141,25 @@ body {
     color: #6b7280;
 }
 
+.academic-filter-select {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid #374151;
+    background: #111827;
+    color: #f9fafb;
+    font-size: 15px;
+    font-family: inherit;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.academic-filter-select:focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+}
+
 .academic-primary-btn {
     padding: 14px 20px;
     background: #2563eb;
@@ -235,7 +254,7 @@ body {
 }
 
 /* ============================================================
-   ACADEMIC FILTER BUTTONS (Dropdown Replacement)
+   ACADEMIC FILTER BUTTONS
    ============================================================ */
 
 .academic-filter-container {
@@ -309,7 +328,7 @@ body {
 }
 
 /* ============================================================
-   ACADEMIC EXAM COMPONENTS (Student & Preview)
+   EXAM COMPONENTS
    ============================================================ */
 
 .academic-progress-bar {
@@ -421,20 +440,8 @@ body {
     font-weight: 600;
 }
 
-.academic-timer.timer-warning {
-    color: #fca5a5;
-    background: rgba(69, 26, 26, 0.9);
-    border-color: rgba(239, 68, 68, 0.3);
-    animation: pulse 1s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-}
-
 /* ============================================================
-   EXAM HEADER (Student)
+   EXAM HEADER
    ============================================================ */
 
 .exam-header {
@@ -496,14 +503,6 @@ body {
     color: #f9fafb;
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    transition: all 0.3s ease;
-}
-
-.timer-warning {
-    color: #fca5a5;
-    background: rgba(69, 26, 26, 0.9);
-    border-color: rgba(239, 68, 68, 0.3);
-    animation: pulse 1s infinite;
 }
 
 /* ============================================================
@@ -525,7 +524,6 @@ body {
     overflow: hidden;
     background: #374151;
     border-radius: 999px;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .progress-fill {
@@ -534,11 +532,10 @@ body {
     background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%);
     border-radius: 999px;
     transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
 }
 
 /* ============================================================
-   QUESTION AREA
+   QUESTION AREA (legacy)
    ============================================================ */
 
 .question-container { margin-top: 8px; }
@@ -558,92 +555,6 @@ body {
     font-size: 26px;
     font-weight: 600;
     line-height: 1.5;
-    letter-spacing: -0.01em;
-}
-
-/* ============================================================
-   OPTIONS
-   ============================================================ */
-
-.options-container {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.option-button {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 16px 20px;
-    border: 2px solid #374151;
-    border-radius: 16px;
-    background: #111827;
-    color: #f9fafb;
-    text-align: left;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    animation: slideUp 0.3s ease-out;
-    animation-fill-mode: both;
-}
-
-@keyframes slideUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.option-button:nth-child(1) { animation-delay: 0.05s; }
-.option-button:nth-child(2) { animation-delay: 0.1s; }
-.option-button:nth-child(3) { animation-delay: 0.15s; }
-.option-button:nth-child(4) { animation-delay: 0.2s; }
-
-.option-button:hover {
-    background: #1a2744;
-    border-color: #4b5563;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-}
-
-.option-button:active {
-    transform: translateY(0) scale(0.99);
-}
-
-.option-button.selected {
-    background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), 0 8px 20px rgba(37, 99, 235, 0.3);
-}
-
-.option-letter {
-    flex-shrink: 0;
-    width: 42px;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px solid #4b5563;
-    border-radius: 50%;
-    background: transparent;
-    color: #d1d5db;
-    font-size: 16px;
-    font-weight: 700;
-    transition: all 0.2s ease;
-}
-
-.option-button.selected .option-letter {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    border-color: #3b82f6;
-    color: white;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-}
-
-.option-text {
-    flex: 1;
-    font-size: 17px;
-    line-height: 1.5;
-    color: #e5e7eb;
-    font-weight: 500;
 }
 
 /* ============================================================
@@ -664,7 +575,6 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
-    letter-spacing: 0.01em;
     font-family: inherit;
 }
 
@@ -678,30 +588,22 @@ body {
 .primary-button:hover {
     background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4);
-}
-
-.primary-button:active {
-    transform: translateY(0) scale(0.98);
 }
 
 .secondary-button {
     flex: 0 0 130px;
     background: #374151;
     color: #f9fafb;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .secondary-button:hover {
     background: #4b5563;
-    transform: translateY(-2px);
 }
 
 .navigation button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
     transform: none;
-    box-shadow: none;
 }
 
 /* ============================================================
@@ -718,55 +620,192 @@ body {
 }
 
 /* ============================================================
-   RESULT BOX
+   SCHEDULE: TODAY CARD
    ============================================================ */
 
-.result-box {
-    text-align: center;
-    padding: 40px 24px;
-    background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
-    border-radius: 20px;
-    border: 2px solid #374151;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
-    animation: fadeIn 0.6s ease-out;
-}
-
-.result-box::before {
-    content: "🎉";
-    display: block;
-    font-size: 56px;
+.today-card {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 12px;
+    padding: 16px;
     margin-bottom: 16px;
-    animation: bounce 1s ease-in-out;
 }
 
-@keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-15px); }
+.today-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #1f2937;
 }
 
-.result-box h2 {
-    margin: 0 0 16px;
+.today-arrow {
+    background: transparent;
+    border: 1px solid #374151;
+    border-radius: 8px;
     color: #60a5fa;
-    font-size: 24px;
-    font-weight: 700;
+    font-size: 14px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s ease;
 }
 
-.result-score {
-    font-size: 64px;
-    font-weight: 800;
-    background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    line-height: 1.1;
-    margin: 16px 0;
+.today-arrow:hover {
+    background: #1a2744;
+    border-color: #60a5fa;
 }
 
-.result-percentage {
-    margin-top: 12px;
-    font-size: 32px;
+.today-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.today-label {
+    color: #60a5fa;
+    font-size: 11px;
     font-weight: 700;
-    color: #34d399;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+
+.today-date {
+    color: #f9fafb;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.today-sessions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.schedule-session-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #0f172a;
+    border-radius: 10px;
+    border: 1px solid #1e293b;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.schedule-session-row:hover {
+    background: #1a2744;
+    border-color: #60a5fa;
+    transform: translateX(3px);
+}
+
+.schedule-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px rgba(96, 165, 250, 0.3);
+}
+
+.schedule-session-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.schedule-session-info strong {
+    color: #f9fafb;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.schedule-session-info span {
+    color: #9ca3af;
+    font-size: 13px;
+}
+
+.schedule-session-arrow {
+    color: #4b5563;
+    font-size: 14px;
+}
+
+/* ============================================================
+   SCHEDULE: FULL WEEK
+   ============================================================ */
+
+.week-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.week-day-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 10px;
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+}
+
+.week-day-label {
+    color: #60a5fa;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    min-width: 42px;
+    padding-top: 4px;
+}
+
+.week-day-sessions {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.week-session-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.week-session-row:hover {
+    background: rgba(96, 165, 250, 0.08);
+}
+
+.week-session-time {
+    color: #9ca3af;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 44px;
+    font-variant-numeric: tabular-nums;
+}
+
+.week-session-name {
+    color: #e5e7eb;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.week-day-empty {
+    color: #4b5563;
+    font-size: 13px;
+    padding: 4px 6px;
 }
 
 /* ============================================================
@@ -787,12 +826,16 @@ body {
     .exam-icon { width: 46px; height: 46px; font-size: 22px; }
     #examTitle { font-size: 19px; }
     .question-text { font-size: 22px; }
-    .option-button { padding: 14px 16px; gap: 14px; }
-    .option-letter { width: 38px; height: 38px; font-size: 15px; }
-    .option-text { font-size: 16px; }
     .secondary-button { flex: 0 0 110px; }
-    .result-score { font-size: 52px; }
-    .result-percentage { font-size: 26px; }
+
+    .today-header { padding-bottom: 10px; }
+    .today-arrow { padding: 6px 10px; font-size: 13px; }
+    .schedule-session-row { padding: 10px 12px; }
+    .schedule-session-info strong { font-size: 14px; }
+    .schedule-session-info span { font-size: 12px; }
+    .week-day-label { min-width: 36px; font-size: 10px; }
+    .week-session-time { min-width: 38px; font-size: 11px; }
+    .week-session-name { font-size: 12px; }
 }
 
 @media (max-width: 400px) {
@@ -806,115 +849,8 @@ body {
     .exam-icon { width: 40px; height: 40px; font-size: 20px; }
     #examTitle { font-size: 17px; }
     .question-text { font-size: 20px; }
-    .option-button { padding: 12px 14px; gap: 12px; }
-    .option-letter { width: 34px; height: 34px; font-size: 14px; }
-    .option-text { font-size: 15px; }
     .primary-button, .secondary-button { font-size: 14px; min-height: 48px; }
     .secondary-button { flex: 0 0 95px; }
     .timer { font-size: 16px; min-width: 72px; padding: 10px 12px; }
     .result-score { font-size: 44px; }
-}
-/* ============================================================
-   CLASS SCHEDULE
-   ============================================================ */
-
-.schedule-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: 8px;
-    border: 1px solid #374151;
-    background: #111827;
-}
-
-.schedule-table {
-    width: 100%;
-    min-width: 700px;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-
-.schedule-table thead {
-    background: #1f2937;
-    position: sticky;
-    top: 0;
-}
-
-.schedule-table th {
-    padding: 10px 6px;
-    color: #60a5fa;
-    font-weight: 700;
-    text-align: center;
-    font-size: 11px;
-    letter-spacing: 0.5px;
-    border-bottom: 2px solid #374151;
-    border-right: 1px solid #374151;
-}
-
-.schedule-table th:last-child {
-    border-right: none;
-}
-
-.schedule-time-col {
-    width: 60px;
-    min-width: 60px;
-    background: #1f2937;
-    color: #9ca3af;
-    font-weight: 600;
-    text-align: center;
-    border-right: 2px solid #374151;
-}
-
-.schedule-table td {
-    padding: 4px;
-    border-bottom: 1px solid #374151;
-    border-right: 1px solid #2d3748;
-    vertical-align: top;
-    min-height: 44px;
-    height: 44px;
-}
-
-.schedule-table td:last-child {
-    border-right: none;
-}
-
-.schedule-table tbody tr:hover {
-    background: rgba(96, 165, 250, 0.03);
-}
-
-.schedule-cell-occupied {
-    background: rgba(37, 99, 235, 0.08) !important;
-}
-
-.schedule-class-card {
-    background: #2563eb;
-    color: white;
-    padding: 4px 6px;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-bottom: 2px;
-    font-size: 10px;
-    line-height: 1.2;
-    transition: all 0.15s ease;
-    display: block;
-}
-
-.schedule-class-card:hover {
-    background: #1d4ed8;
-    transform: scale(1.03);
-}
-
-.schedule-class-card strong {
-    display: block;
-    font-size: 10px;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.schedule-class-card span {
-    display: block;
-    font-size: 9px;
-    color: #bfdbfe;
-    margin-top: 1px;
 }
