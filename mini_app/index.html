@@ -214,18 +214,11 @@
         // ============================================================
         // MY SCHEDULE (Today Card + Full Week)
         // ============================================================
-        //
-        // Design:
-        // - Top section: Today card with prev/next arrows.
-        // - Bottom section: Compact list of the entire week.
-        // - Click on any student session opens a detail card.
-        // ============================================================
 
         const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         const DAYS_SHORT = { Monday: 'MON', Tuesday: 'TUE', Wednesday: 'WED', Thursday: 'THU', Friday: 'FRI', Saturday: 'SAT', Sunday: 'SUN' };
 
         function getDayNameFromDate(date) {
-            // JS getDay: 0=Sunday, 1=Monday...
             const jsDay = date.getDay();
             const map = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             return map[jsDay];
@@ -272,8 +265,7 @@
                 .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
         }
 
-               function getDayLabel(date) {
-            // Compare calendar dates (not times) to label the shown day.
+        function getDayLabel(date) {
             const today = new Date();
             const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
             const shownStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -281,7 +273,7 @@
             if (diffDays === 0) return 'Today';
             if (diffDays === 1) return 'Tomorrow';
             if (diffDays === -1) return 'Yesterday';
-            return null; // No label for other days
+            return null;
         }
 
         function renderMySchedule() {
@@ -289,14 +281,13 @@
             const todaySessions = getSessionsForDay(todayName);
             const dayLabel = getDayLabel(currentTodayDate);
 
-            // Build the "Today" card
             let todayHtml = '';
             if (todaySessions.length === 0) {
                 todayHtml = `<p style="color: #6b7280; text-align: center; padding: 16px; font-size: 14px;">No classes scheduled for this day.</p>`;
             } else {
                 todaySessions.forEach(s => {
                     todayHtml += `
-                        <div class="schedule-session-row" onclick="showSessionDetail(${s.id})">
+                        <div class="schedule-session-row" onclick="showStudentSchedule(${s.id})">
                             <span class="schedule-color-dot" style="background: ${s.student_color};"></span>
                             <div class="schedule-session-info">
                                 <strong>${s.student_name}</strong>
@@ -308,7 +299,6 @@
                 });
             }
 
-            // Build the "Full Week" compact list
             let weekHtml = '';
             DAYS_OF_WEEK.forEach(day => {
                 const daySessions = getSessionsForDay(day);
@@ -322,7 +312,7 @@
                 } else {
                     daySessions.forEach(s => {
                         weekHtml += `
-                            <div class="week-session-row" onclick="showSessionDetail(${s.id})">
+                            <div class="week-session-row" onclick="showStudentSchedule(${s.id})">
                                 <span class="schedule-color-dot" style="background: ${s.student_color};"></span>
                                 <span class="week-session-time">${s.start_time}</span>
                                 <span class="week-session-name">${s.student_name}</span>
@@ -343,7 +333,6 @@
 
                     <button class="academic-primary-btn" style="width: 100%; margin-bottom: 20px;" onclick="showAddSessionForm()">➕ Add Session</button>
 
-                    <!-- TODAY CARD -->
                     <div class="today-card">
                         <div class="today-header">
                             <button class="today-arrow" onclick="shiftToday(-1)">◀</button>
@@ -358,7 +347,6 @@
                         </div>
                     </div>
 
-                    <!-- FULL WEEK -->
                     <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Full Week</h3>
                     <div class="week-container">
                         ${weekHtml}
@@ -374,56 +362,123 @@
             renderMySchedule();
         }
 
-        function showSessionDetail(scheduleId) {
-            const session = scheduleData.find(s => s.id === scheduleId);
-            if (!session) {
+        // ============================================================
+        // STUDENT SCHEDULE (all sessions of one student)
+        // ============================================================
+
+        function showStudentSchedule(scheduleId) {
+            const clickedSession = scheduleData.find(s => s.id === scheduleId);
+            if (!clickedSession) {
                 alert('Session not found.');
                 return;
             }
-            const student = allStudents.find(s => s.id === session.student_id);
+
+            const studentId = clickedSession.student_id;
+            const studentSessions = scheduleData
+                .filter(s => s.student_id === studentId)
+                .sort((a, b) => {
+                    const dayOrder = DAYS_OF_WEEK.indexOf(a.day_of_week) - DAYS_OF_WEEK.indexOf(b.day_of_week);
+                    if (dayOrder !== 0) return dayOrder;
+                    return timeToMinutes(a.start_time) - timeToMinutes(b.start_time);
+                });
+
+            const student = allStudents.find(s => s.id === studentId);
+            const studentName = clickedSession.student_name;
+            const studentColor = clickedSession.student_color || '#2563eb';
+
+            let sessionsHtml = '';
+            if (studentSessions.length === 0) {
+                sessionsHtml = `<p style="color: #9ca3af; text-align: center; padding: 20px;">No sessions yet.</p>`;
+            } else {
+                studentSessions.forEach(s => {
+                    sessionsHtml += `
+                        <div class="academic-card" style="border-left: 4px solid ${studentColor}; margin-bottom: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                        <strong style="color: #60a5fa; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">${DAYS_SHORT[s.day_of_week]}</strong>
+                                        <span style="color: #f9fafb; font-size: 14px; font-weight: 600;">${s.start_time} → ${s.end_time}</span>
+                                    </div>
+                                    ${s.notes ? `<span style="color: #9ca3af; font-size: 13px; display: block; margin-top: 6px;">📝 ${s.notes}</span>` : `<span style="color: #4b5563; font-size: 12px; display: block; margin-top: 6px;">(no notes)</span>`}
+                                </div>
+                                <div style="flex-shrink: 0; display: flex; gap: 4px;">
+                                    <button class="academic-icon-btn primary" onclick="showEditSessionForm(${s.id})" title="Edit">✏️</button>
+                                    <button class="academic-icon-btn danger" onclick="deleteSessionFromStudent(${s.id}, ${studentId})" title="Delete">🗑️</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
 
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <button class="academic-back-button" onclick="renderMySchedule()">▸ Back</button>
-                    <h2 class="academic-page-title">📋 Session Details</h2>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <button class="academic-back-button" style="margin-bottom: 0;" onclick="renderMySchedule()">▸ Back</button>
+                        <button class="share-btn" onclick="shareStudentSchedule(${studentId})" title="Share Schedule">📤 Share</button>
+                    </div>
 
-                    <div class="academic-card" style="border-left: 5px solid ${session.student_color}; margin-bottom: 16px;">
+                    <h2 class="academic-page-title">📋 Student Schedule</h2>
+
+                    <div class="academic-card" style="border-left: 5px solid ${studentColor}; margin-bottom: 16px;">
                         <div style="display: flex; align-items: center; gap: 12px;">
-                            <span class="schedule-color-dot" style="background: ${session.student_color}; width: 22px; height: 22px;"></span>
+                            <span class="schedule-color-dot" style="background: ${studentColor}; width: 22px; height: 22px;"></span>
                             <div>
-                                <strong style="color: #f9fafb; font-size: 18px;">${session.student_name}</strong>
-                                <span style="color: #9ca3af; font-size: 13px; display: block;">Student ID: ${session.student_id}</span>
+                                <strong style="color: #f9fafb; font-size: 18px;">${studentName}</strong>
+                                <span style="color: #9ca3af; font-size: 13px; display: block;">Student ID: ${studentId}</span>
+                                ${student ? `<span style="color: #60a5fa; font-size: 12px; display: block;">Group: ${student.group_name}</span>` : ''}
                             </div>
                         </div>
                     </div>
 
-                    <div class="academic-card">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span style="color: #9ca3af; font-size: 13px;">Day</span>
-                            <strong style="color: #f9fafb;">${session.day_of_week}</strong>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span style="color: #9ca3af; font-size: 13px;">Time</span>
-                            <strong style="color: #f9fafb;">${session.start_time} → ${session.end_time}</strong>
-                        </div>
-                        ${session.notes ? `
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="color: #9ca3af; font-size: 13px;">Notes</span>
-                            <span style="color: #e5e7eb; text-align: right;">${session.notes}</span>
-                        </div>
-                        ` : ''}
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                        <button class="academic-primary-btn" style="flex: 1;" onclick="showAddSessionFormForStudent(${studentId})">➕ Add Session</button>
+                        ${student ? `<button class="academic-secondary-btn" style="flex: 1;" onclick="showStudentProfileFromSchedule(${studentId})">👤 Profile</button>` : ''}
                     </div>
 
-                    <div style="display: flex; gap: 8px; margin-top: 16px;">
-                        <button class="academic-primary-btn" style="flex: 1;" onclick="showEditSessionForm(${session.id})">✏️ Edit</button>
-                        <button class="academic-secondary-btn" style="flex: 1;" onclick="deleteSession(${session.id})">🗑️ Delete</button>
-                    </div>
+                    <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 16px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Sessions (${studentSessions.length})</h3>
 
-                    ${student ? `
-                        <button class="academic-primary-btn" style="width: 100%; margin-top: 8px; background: #374151;" onclick="showStudentProfile(${student.id})">👤 Open Student Profile</button>
-                    ` : ''}
+                    ${sessionsHtml}
                 </div>
             `;
+        }
+
+        function showStudentProfileFromSchedule(studentId) {
+            // When opening profile from within schedule, the Back button should return to schedule.
+            showStudentProfile(studentId, 'schedule');
+        }
+
+        function shareStudentSchedule(studentId) {
+            const studentSessions = scheduleData
+                .filter(s => s.student_id === studentId)
+                .sort((a, b) => {
+                    const dayOrder = DAYS_OF_WEEK.indexOf(a.day_of_week) - DAYS_OF_WEEK.indexOf(b.day_of_week);
+                    if (dayOrder !== 0) return dayOrder;
+                    return timeToMinutes(a.start_time) - timeToMinutes(b.start_time);
+                });
+
+            if (studentSessions.length === 0) {
+                alert('No sessions to share.');
+                return;
+            }
+
+            const studentName = studentSessions[0].student_name;
+
+            let message = `📅 Student Schedule\n\n`;
+            message += `👤 ${studentName}\n\n`;
+            message += `📋 Sessions (${studentSessions.length}):\n\n`;
+
+            studentSessions.forEach(s => {
+                message += `• ${DAYS_SHORT[s.day_of_week]} ${s.start_time} → ${s.end_time}\n`;
+                if (s.notes) {
+                    message += `  📝 ${s.notes}\n`;
+                }
+            });
+
+            message += `\n#YEnglishExams`;
+
+            const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(message)}`;
+            window.open(shareUrl, '_blank');
         }
 
         // ============================================================
@@ -431,22 +486,40 @@
         // ============================================================
 
         function showAddSessionForm() {
-            renderSessionForm(null);
+            renderSessionForm(null, null, null);
+        }
+
+        function showAddSessionFormForStudent(studentId) {
+            renderSessionForm(null, studentId, null);
         }
 
         function showEditSessionForm(scheduleId) {
             const session = scheduleData.find(s => s.id === scheduleId);
             if (!session) { alert('Session not found.'); return; }
-            renderSessionForm(session);
+            renderSessionForm(session, null, null);
         }
 
-        function renderSessionForm(session) {
+        function renderSessionForm(session, preferredStudentId, returnToStudentId) {
             const isEdit = session !== null;
             const dayValue = isEdit ? session.day_of_week : 'Monday';
-            const studentValue = isEdit ? session.student_id : (allStudents[0]?.id || '');
+            const studentValue = isEdit
+                ? session.student_id
+                : (preferredStudentId || allStudents[0]?.id || '');
             const startValue = isEdit ? session.start_time : '16:00';
             const endValue = isEdit ? session.end_time : '17:00';
             const notesValue = isEdit ? (session.notes || '') : '';
+
+            // Decide where the Back button should return to.
+            let backAction;
+            if (isEdit && returnToStudentId) {
+                backAction = `showStudentScheduleByStudent(${returnToStudentId})`;
+            } else if (isEdit) {
+                backAction = `showStudentSchedule(${session.id})`;
+            } else if (preferredStudentId) {
+                backAction = `showStudentScheduleByStudent(${preferredStudentId})`;
+            } else {
+                backAction = 'renderMySchedule()';
+            }
 
             let dayOptions = '';
             DAYS_OF_WEEK.forEach(d => {
@@ -467,7 +540,7 @@
 
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
-                    <button class="academic-back-button" onclick="renderMySchedule()">▸ Back</button>
+                    <button class="academic-back-button" onclick="${backAction}">▸ Back</button>
                     <h2 class="academic-page-title">${isEdit ? '✏️ Edit Session' : '➕ Add Session'}</h2>
 
                     <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -494,12 +567,38 @@
                             ${isEdit ? 'Save Changes' : 'Add Session'}
                         </button>
 
-                        ${isEdit ? `<button class="academic-secondary-btn" style="margin-top: 4px;" onclick="deleteSession(${session.id})">🗑️ Delete Session</button>` : ''}
+                        ${isEdit ? `<button class="academic-secondary-btn" style="margin-top: 4px;" onclick="deleteSessionFromForm(${session.id}, ${session.student_id})">🗑️ Delete Session</button>` : ''}
                     </div>
 
                     <div id="sessionFormStatus" style="margin-top: 12px; color: #9ca3af;"></div>
                 </div>
             `;
+        }
+
+        function showStudentScheduleByStudent(studentId) {
+            const anySession = scheduleData.find(s => s.student_id === studentId);
+            if (anySession) {
+                showStudentSchedule(anySession.id);
+            } else {
+                const student = allStudents.find(s => s.id === studentId);
+                const studentName = student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : 'Student';
+                const studentColor = student?.color || '#2563eb';
+                document.querySelector('.exam-card').innerHTML = `
+                    <div style="padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <button class="academic-back-button" style="margin-bottom: 0;" onclick="renderMySchedule()">▸ Back</button>
+                            <button class="share-btn" onclick="shareStudentSchedule(${studentId})" title="Share Schedule">📤 Share</button>
+                        </div>
+                        <h2 class="academic-page-title">📋 Student Schedule</h2>
+                        <div class="academic-card" style="border-left: 5px solid ${studentColor}; margin-bottom: 16px;">
+                            <strong style="color: #f9fafb; font-size: 18px;">${studentName}</strong>
+                            <span style="color: #9ca3af; font-size: 13px; display: block;">Student ID: ${studentId}</span>
+                        </div>
+                        <button class="academic-primary-btn" style="width: 100%; margin-bottom: 16px;" onclick="showAddSessionFormForStudent(${studentId})">➕ Add Session</button>
+                        <p style="color: #9ca3af; text-align: center; padding: 20px;">No sessions yet.</p>
+                    </div>
+                `;
+            }
         }
 
         async function saveSessionForm(sessionId) {
@@ -543,7 +642,9 @@
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
-                    await showMySchedule();
+                    // Refresh schedule data, then return to the student's schedule view
+                    await refreshScheduleData();
+                    showStudentScheduleByStudent(parseInt(studentId));
                 } else {
                     document.getElementById('sessionFormStatus').textContent = '❌ ' + (data.message || 'Failed to save.');
                 }
@@ -552,8 +653,17 @@
             }
         }
 
-        async function deleteSession(sessionId) {
+        async function deleteSessionFromForm(sessionId, studentId) {
             if (!confirm('Delete this session?')) return;
+            await deleteSessionInternal(sessionId, studentId);
+        }
+
+        async function deleteSessionFromStudent(sessionId, studentId) {
+            if (!confirm('Delete this session?')) return;
+            await deleteSessionInternal(sessionId, studentId);
+        }
+
+        async function deleteSessionInternal(sessionId, studentId) {
             try {
                 const response = await fetch(`/api/teacher/schedule/${sessionId}`, {
                     method: 'DELETE',
@@ -561,12 +671,24 @@
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
-                    await showMySchedule();
+                    await refreshScheduleData();
+                    showStudentScheduleByStudent(studentId);
                 } else {
                     alert('❌ ' + (data.message || 'Failed to delete.'));
                 }
             } catch (error) {
                 alert('❌ Error deleting session.');
+            }
+        }
+
+        async function refreshScheduleData() {
+            try {
+                const scheduleResponse = await fetchAPI('/api/teacher/schedule');
+                if (scheduleResponse.status === 'success') {
+                    scheduleData = scheduleResponse.schedule || [];
+                }
+            } catch (e) {
+                // silently ignore — user still on schedule view
             }
         }
 
@@ -615,7 +737,7 @@
             }
         }
 
-        async function showStudentProfile(studentId) {
+        async function showStudentProfile(studentId, fromContext) {
             currentStudentId = studentId;
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading profile...</p></div>`;
             try {
@@ -626,9 +748,13 @@
                 }
                 const s = data.student;
                 const color = s.color || '#2563eb';
+                const backAction = fromContext === 'schedule'
+                    ? `showStudentScheduleByStudent(${studentId})`
+                    : 'loadStudents()';
+
                 let html = `
                     <div style="padding: 20px;">
-                        ${academicHeader('Student Profile', 'loadStudents()')}
+                        ${academicHeader('Student Profile', backAction)}
                         
                         <div class="academic-card" style="text-align: center; margin-bottom: 20px; border-left: 5px solid ${color};">
                             <div style="font-size: 40px; margin-bottom: 8px;">👤</div>
