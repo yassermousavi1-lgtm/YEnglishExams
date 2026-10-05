@@ -904,3 +904,208 @@ body {
         box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
     }
 }
+/* ============================================================
+   WORD BANK — STUDENT VIEW
+   ============================================================ */
+
+.wb-wrapper {
+    width: 100%;
+}
+
+.wb-inner {
+    padding: 20px;
+}
+
+.wb-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.wb-title {
+    color: #f9fafb;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.wb-exam-title {
+    color: #9ca3af;
+    font-size: 12px;
+    margin: 0 0 16px 0;
+    text-align: center;
+}
+
+.wb-instruction {
+    color: #e5e7eb;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 12px 14px;
+    background: #111827;
+    border-left: 3px solid #60a5fa;
+    border-radius: 6px;
+    margin-bottom: 16px;
+}
+
+/* ----- Word Bank ----- */
+.wb-word-bank {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 20px;
+}
+
+.wb-bank-label {
+    color: #60a5fa;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+}
+
+.wb-bank-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.wb-chip {
+    background: #2563eb;
+    color: #ffffff;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    transition: transform 0.15s ease, background 0.15s ease;
+    border: 1px solid #1d4ed8;
+}
+
+.wb-chip:active {
+    cursor: grabbing;
+    transform: scale(1.05);
+}
+
+.wb-chip-used {
+    background: #1f2937;
+    color: #4b5563;
+    border-color: #374151;
+    cursor: not-allowed;
+    opacity: 0.5;
+    text-decoration: line-through;
+}
+
+.wb-chip-dragging {
+    opacity: 0.3;
+}
+
+/* ----- Floating drag ghost ----- */
+.wb-drag-ghost {
+    position: fixed;
+    z-index: 9999;
+    padding: 8px 14px;
+    background: #3b82f6;
+    color: #ffffff;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: none;
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.5);
+    transform: scale(1.05);
+}
+
+/* ----- Sentences ----- */
+.wb-sentences {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.wb-sentence {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.wb-num {
+    color: #60a5fa;
+    font-weight: 700;
+    flex-shrink: 0;
+    min-width: 20px;
+}
+
+.wb-text {
+    color: #e5e7eb;
+    flex: 1;
+}
+
+/* ----- Blank ----- */
+.wb-blank {
+    display: inline-block;
+    min-width: 80px;
+    padding: 4px 12px;
+    margin: 0 4px;
+    border: 2px dashed #4b5563;
+    border-radius: 6px;
+    background: #0f172a;
+    color: #6b7280;
+    text-align: center;
+    font-weight: 600;
+    font-size: 13px;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+.wb-blank-over {
+    border-color: #60a5fa;
+    background: #1e3a8a;
+    color: #93c5fd;
+    transform: scale(1.08);
+}
+
+.wb-blank-filled {
+    border-style: solid;
+    border-color: #2563eb;
+    background: #1e3a8a;
+    color: #f9fafb;
+}
+
+.wb-blank-filled:hover {
+    background: #1e40af;
+}
+
+.wb-blank-filled::after {
+    content: " ✕";
+    color: #93c5fd;
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+.wb-blank-filled:hover::after {
+    opacity: 1;
+}
+
+/* ----- Submit ----- */
+.wb-submit-btn {
+    width: 100%;
+    margin-top: 20px;
+}
+
+.wb-status {
+    margin-top: 12px;
+    color: #9ca3af;
+    text-align: center;
+    font-size: 12px;
+}

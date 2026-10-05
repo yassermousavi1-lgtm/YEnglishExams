@@ -993,7 +993,7 @@
                                 <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">${cat}</h3>
                         `;
                         grouped[cat].forEach(e => {
-                            const typeLabel = e.exam_type === 'word_bank' ? '📝 Word Bank' : '✅ MCQ';
+                            const typeLabel = e.exam_type === 'word_bank' ? '📝 Word Bank' : 'MCQ';
                             html += `
                                 <div class="academic-card">
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1766,12 +1766,12 @@
                     grouped[cat].forEach(e => {
                         const assigned = assignedMap[e.id];
                         const isAssigned = !!assigned;
-                        const typeIcon = e.exam_type === 'word_bank' ? '📝' : '✅';
+                        const typeIcon = e.exam_type === 'word_bank' ? '📝' : '';
                         html += `
                             <div class="academic-card" style="margin-bottom: 6px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; min-width: 0;">
-                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${typeIcon} ${e.title}</strong>
+                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${typeIcon ? typeIcon + ' ' : ''}${e.title}</strong>
                                         <span style="color: #9ca3af; font-size: 12px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
                                         ${isAssigned ? `<span style="color: #60a5fa; font-size: 11px;">📌 ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 11px;">⚠️ Not assigned</span>`}
                                     </div>
@@ -2179,15 +2179,23 @@
             `;
         }
 
-        // ============================================================
-        // WORD BANK — DRAG & DROP UI
+               // ============================================================
+        // WORD BANK — RENDER + DRAG & DROP
         // ============================================================
         //
-        // Uses Pointer Events (works on desktop + mobile + Telegram WebView).
-        // Confirmed working via dragtest.html before this feature was added.
+        // Architecture:
+        //   1. Server sends sentences WITH "_____" placeholder
+        //   2. Frontend splits sentence by "_____" into [before, after]
+        //   3. Renders blank as a drop target
+        //   4. Word Bank chips are draggable
+        //   5. On drop, word goes into blank; chip becomes "used"
+        //   6. Clicking a filled blank returns the word to the bank
         // ============================================================
 
         let wbDragged = null;
+        let wbDragGhost = null;
+        let wbDragOffsetX = 0;
+        let wbDragOffsetY = 0;
 
         function shuffleArray(arr) {
             const a = arr.slice();
@@ -2198,17 +2206,14 @@
             return a;
         }
 
-        function splitSentenceAtAnswer(sentence, answer) {
-            // Case-insensitive split, preserve original capitalization.
-            const idx = sentence.toLowerCase().indexOf(answer.toLowerCase());
-            if (idx === -1) {
-                // Fallback: append blank at end
-                return { before: sentence + ' ', after: '' };
-            }
-            return {
-                before: sentence.substring(0, idx),
-                after: sentence.substring(idx + answer.length)
-            };
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function renderWordBankView(isPreview) {
@@ -2217,12 +2222,10 @@
 
             const wbId = String(wb.id);
 
-            // If no answer map yet for this question, initialize empty
             if (!wordBankAnswers[wbId]) {
                 wordBankAnswers[wbId] = {};
             }
 
-            // Shuffle word bank on first render only (preserve on re-render)
             if (!wb._shuffledWords) {
                 wb._shuffledWords = shuffleArray(wb.word_bank);
             }
@@ -2236,32 +2239,42 @@
                    </div>`
                 : '';
 
-            // Build sentences with blanks
+            // ----- Build sentences -----
             let sentencesHtml = '';
             wb.questions.forEach(q => {
                 const num = String(q.number);
                 const placed = wordBankAnswers[wbId][num];
-                const parts = splitSentenceAtAnswer(q.sentence, findAnswerForSentence(wb, q.number));
+                const sentenceText = q.sentence || '';
 
-                const blankContent = placed
-                    ? `<span class="wb-blank filled" data-qid="${wbId}" data-num="${num}" data-placed="true" onclick="removeWordFromBlank('${wbId}', '${num}')">${placed}</span>`
-                    : `<span class="wb-blank" data-qid="${wbId}" data-num="${num}">_____</span>`;
+                // Split on "_____" placeholder
+                const parts = sentenceText.split('_____');
+                const before = escapeHtml(parts[0] || '');
+                const after = escapeHtml(parts[1] || '');
+
+                const blankHtml = placed
+                    ? `<span class="wb-blank wb-blank-filled" 
+                             data-qid="${wbId}" 
+                             data-num="${num}"
+                             onclick="removeWordFromBlank('${wbId}', '${num}')">${escapeHtml(placed)}</span>`
+                    : `<span class="wb-blank" 
+                             data-qid="${wbId}" 
+                             data-num="${num}">_____</span>`;
 
                 sentencesHtml += `
                     <div class="wb-sentence">
                         <span class="wb-num">${q.number}.</span>
-                        <span class="wb-text">${escapeHtml(parts.before)}${blankContent}${escapeHtml(parts.after)}</span>
+                        <span class="wb-text">${before}${blankHtml}${after}</span>
                     </div>
                 `;
             });
 
-            // Build word chips
+            // ----- Build word bank chips -----
             let chipsHtml = '';
             wb._shuffledWords.forEach(word => {
                 const isUsed = placedWords.includes(word);
                 chipsHtml += `
-                    <div class="wb-chip ${isUsed ? 'used' : ''}" 
-                         data-word="${escapeHtml(word)}" 
+                    <div class="wb-chip${isUsed ? ' wb-chip-used' : ''}" 
+                         data-word="${escapeHtml(word)}"
                          data-qid="${wbId}"
                          ${isUsed ? '' : `onpointerdown="wbStartDrag(event, '${escapeHtml(word)}', '${wbId}')"`}>
                         ${escapeHtml(word)}
@@ -2272,21 +2285,24 @@
             const instruction = wb.instruction || 'Complete each sentence using a word from the box. There is ONE extra word.';
 
             document.querySelector('.exam-card').innerHTML = `
-                <div style="padding: 0;">
+                <div class="wb-wrapper">
                     ${bannerHtml}
-                    <div style="padding: 20px;">
+                    <div class="wb-inner">
                         ${isPreview ? '' : `
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                <h1 style="color: #f9fafb; font-size: 18px; font-weight: 600; margin: 0;">YEnglish Exams</h1>
-                                <span class="academic-timer" id="academicTimer" style="color: #f9fafb; font-size: 14px; font-weight: 600;">${formatTime(remainingSeconds)}</span>
+                            <div class="wb-header">
+                                <h1 class="wb-title">YEnglish Exams</h1>
+                                <span class="academic-timer" id="academicTimer">${formatTime(remainingSeconds)}</span>
                             </div>
-                            <p style="color: #9ca3af; font-size: 14px; margin: 0 0 16px 0; text-align: center;">${escapeHtml(exam.title)}</p>
+                            <p class="wb-exam-title">${escapeHtml(exam.title)}</p>
                         `}
 
                         <div class="wb-instruction">${escapeHtml(instruction)}</div>
 
-                        <div class="wb-word-bank" id="wbWordBank">
-                            ${chipsHtml}
+                        <div class="wb-word-bank">
+                            <div class="wb-bank-label">📦 Word Bank</div>
+                            <div class="wb-bank-chips">
+                                ${chipsHtml}
+                            </div>
                         </div>
 
                         <div class="wb-sentences">
@@ -2294,105 +2310,104 @@
                         </div>
 
                         ${isPreview ? '' : `
-                            <div style="margin-top: 24px;">
-                                <button class="academic-primary-btn" style="width: 100%;" onclick="submitStudentExam()">Submit Exam</button>
-                            </div>
-                            <div id="examStatus" style="margin-top: 12px; color: #9ca3af; text-align: center; font-size: 13px;"></div>
+                            <button class="academic-primary-btn wb-submit-btn" onclick="submitStudentExam()">
+                                ✓ Submit Exam
+                            </button>
+                            <div id="examStatus" class="wb-status"></div>
                         `}
                     </div>
                 </div>
             `;
         }
 
-        function findAnswerForSentence(wb, number) {
-            // Server does not send answers to student. We only need it for
-            // splitting the sentence around the blank. If answer is missing
-            // we fall back to a generic blank position.
-            // (Student view receives sentences WITH the answer word still
-            // embedded — that's how the teacher submitted them. But we
-            // removed the answer from student_data. So we cannot split
-            // precisely here without it.)
-            // ---
-            // To keep things simple and safe, student sentences are
-            // already split by the server if needed. Since our current
-            // server sends full sentences, we split using a heuristic:
-            // we look for the FIRST occurrence of any word in the bank
-            // that is not yet used elsewhere. But because we do not have
-            // access to the answer, we simply return a special marker to
-            // place the blank at the end.
-            // ---
-            // >>> IMPORTANT: We actually DO need the blank position.
-            // Since student_data contains the sentence WITH the answer
-            // word still embedded, and we removed answer from student_data,
-            // we cannot find it. The fix: server SHOULD send sentences
-            // with a placeholder token like "____".
-            // For now we assume sentences already contain "____".
-            return '__BLANK_TOKEN__';
+        function removeWordFromBlank(qid, num) {
+            if (!wordBankAnswers[qid]) return;
+            delete wordBankAnswers[qid][num];
+            renderWordBankView(isPreviewMode);
         }
 
-        function escapeHtml(str) {
-            if (str === null || str === undefined) return '';
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
+        // ------------------------------------------------------------
+        // Drag & Drop via Pointer Events (works on mobile + desktop)
+        // ------------------------------------------------------------
 
         function wbStartDrag(event, word, qid) {
             event.preventDefault();
-            wbDragged = { word, qid };
+            wbDragged = { word: word, qid: qid };
+
+            // Create floating ghost element
+            wbDragGhost = document.createElement('div');
+            wbDragGhost.className = 'wb-drag-ghost';
+            wbDragGhost.textContent = word;
+            document.body.appendChild(wbDragGhost);
+
+            const rect = event.target.getBoundingClientRect();
+            wbDragOffsetX = event.clientX - rect.left;
+            wbDragOffsetY = event.clientY - rect.top;
+
+            wbDragGhost.style.left = (event.clientX - wbDragOffsetX) + 'px';
+            wbDragGhost.style.top = (event.clientY - wbDragOffsetY) + 'px';
+
+            event.target.classList.add('wb-chip-dragging');
+
             document.addEventListener('pointermove', wbPointerMove);
             document.addEventListener('pointerup', wbPointerUp);
             document.addEventListener('pointercancel', wbPointerUp);
         }
 
         function wbPointerMove(event) {
-            if (!wbDragged) return;
+            if (!wbDragged || !wbDragGhost) return;
             event.preventDefault();
-            // Optionally highlight the blank under the pointer
+
+            wbDragGhost.style.left = (event.clientX - wbDragOffsetX) + 'px';
+            wbDragGhost.style.top = (event.clientY - wbDragOffsetY) + 'px';
+
+            // Highlight target blank
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
             const under = document.elementFromPoint(event.clientX, event.clientY);
-            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('over'));
             const blank = under?.closest?.('.wb-blank');
-            if (blank && !blank.dataset.placed) blank.classList.add('over');
+            if (blank && !blank.classList.contains('wb-blank-filled')) {
+                blank.classList.add('wb-blank-over');
+            }
         }
 
         function wbPointerUp(event) {
             if (!wbDragged) return;
             event.preventDefault();
+
             document.removeEventListener('pointermove', wbPointerMove);
             document.removeEventListener('pointerup', wbPointerUp);
             document.removeEventListener('pointercancel', wbPointerUp);
 
-            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('over'));
+            if (wbDragGhost) {
+                wbDragGhost.remove();
+                wbDragGhost = null;
+            }
+
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
+            document.querySelectorAll('.wb-chip').forEach(c => c.classList.remove('wb-chip-dragging'));
 
             const under = document.elementFromPoint(event.clientX, event.clientY);
             const blank = under?.closest?.('.wb-blank');
 
-            if (blank && !blank.dataset.placed) {
+            if (blank && !blank.classList.contains('wb-blank-filled')) {
                 const qid = blank.dataset.qid;
                 const num = blank.dataset.num;
                 const word = wbDragged.word;
 
-                // Remove any previously placed word in this blank
-                const existing = wordBankAnswers[qid][num];
-                if (existing) {
-                    // put existing word back (it will be usable again)
+                // Remove any previous word in this blank
+                if (wordBankAnswers[qid][num]) {
+                    delete wordBankAnswers[qid][num];
                 }
 
+                // Place the word
                 wordBankAnswers[qid][num] = word;
+
                 wbDragged = null;
                 renderWordBankView(isPreviewMode);
                 return;
             }
 
             wbDragged = null;
-        }
-
-        function removeWordFromBlank(qid, num) {
-            if (!wordBankAnswers[qid]) return;
-            delete wordBankAnswers[qid][num];
             renderWordBankView(isPreviewMode);
         }
 
