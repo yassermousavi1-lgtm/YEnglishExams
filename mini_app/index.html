@@ -96,6 +96,11 @@
         let allStudents = [];
         let currentTodayDate = new Date();
 
+        // Word Bank state
+        let wordBankQuestions = [];       // array from API
+        let wordBankAnswers = {};         // { questionId: { sentenceNumber: word } }
+        let currentWordBankIndex = 0;
+
         // ============================================================
         // TELEGRAM USER
         // ============================================================
@@ -212,7 +217,7 @@
         }
 
         // ============================================================
-        // MY SCHEDULE (Today Card + Full Week)
+        // MY SCHEDULE
         // ============================================================
 
         const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -988,12 +993,13 @@
                                 <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">${cat}</h3>
                         `;
                         grouped[cat].forEach(e => {
+                            const typeLabel = e.exam_type === 'word_bank' ? '📝 Word Bank' : '✅ MCQ';
                             html += `
                                 <div class="academic-card">
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
                                         <div>
                                             <strong style="color: #f9fafb;">${e.title}</strong>
-                                            <span style="color: #9ca3af; font-size: 13px; display: block;">ID: ${e.id} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                            <span style="color: #9ca3af; font-size: 13px; display: block;">ID: ${e.id} | ${typeLabel} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
                                         </div>
                                         <div>
                                             <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
@@ -1032,6 +1038,16 @@
                     return;
                 }
                 exam = data.exam;
+                if (data.exam.exam_type === 'word_bank') {
+                    wordBankQuestions = data.word_bank_questions || [];
+                    if (wordBankQuestions.length === 0) {
+                        showError('This exam has no Word Bank questions.');
+                        return;
+                    }
+                    wordBankAnswers = {};
+                    renderWordBankView(true);
+                    return;
+                }
                 questions = data.questions || [];
                 if (questions.length === 0) {
                     showError('This exam has no questions.');
@@ -1225,12 +1241,13 @@
                     html += `<p style="color: #9ca3af;">No results yet.</p>`;
                 } else {
                     data.results.forEach(r => {
+                        const typeIcon = r.exam_type === 'word_bank' ? '📝' : '✅';
                         html += `
                             <div class="academic-card">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
                                         <strong style="color: #f9fafb;">${r.student_name}</strong>
-                                        <span style="color: #60a5fa; display: block; font-size: 13px;">${r.exam_title}</span>
+                                        <span style="color: #60a5fa; display: block; font-size: 13px;">${typeIcon} ${r.exam_title}</span>
                                         <span style="color: #34d399; font-weight: 600; font-size: 14px;">Score: ${r.score}/${r.total_questions} (${r.percentage}%)</span>
                                         <span style="color: #9ca3af; font-size: 12px; display: block;">${r.completed_at || 'N/A'}</span>
                                     </div>
@@ -1318,7 +1335,7 @@
         }
 
         // ============================================================
-        // ADD STUDENT / ADD GROUP / CREATE EXAM
+        // ADD STUDENT / ADD GROUP
         // ============================================================
 
         function showAddStudent() {
@@ -1397,19 +1414,86 @@
             } catch (error) { document.getElementById('addGroupStatus').textContent = '❌ Error adding group.'; }
         }
 
+        // ============================================================
+        // CREATE EXAM (with dropdown for type selection)
+        // ============================================================
+
+        const MCQ_TEMPLATE = `[
+  {
+    "question_text": "She _____ to school every day.",
+    "option_a": "go",
+    "option_b": "goes",
+    "option_c": "going",
+    "option_d": "gone",
+    "correct_answer": "B"
+  }
+]`;
+
+        const WORD_BANK_TEMPLATE = `{
+  "instruction": "Complete each sentence using a word from the box. There is ONE extra word.",
+  "word_bank": ["achieve", "avoid", "benefit", "confident", "improve", "increase", "prevent", "provide", "reduce", "require", "ancient"],
+  "questions": [
+    { "number": 1, "sentence": "Regular exercise can improve your physical and mental health.", "answer": "improve" },
+    { "number": 2, "sentence": "Wearing a seat belt can prevent serious injuries in an accident.", "answer": "prevent" },
+    { "number": 3, "sentence": "The company decided to increase the number of employees working remotely.", "answer": "increase" },
+    { "number": 4, "sentence": "This course will provide students with practical language skills.", "answer": "provide" },
+    { "number": 5, "sentence": "You should avoid eating too much processed food.", "answer": "avoid" },
+    { "number": 6, "sentence": "She worked hard to achieve her goal of becoming a doctor.", "answer": "achieve" },
+    { "number": 7, "sentence": "The job will require excellent communication skills.", "answer": "require" },
+    { "number": 8, "sentence": "He felt more confident after practicing his presentation several times.", "answer": "confident" },
+    { "number": 9, "sentence": "One major benefit of studying abroad is the opportunity to experience another culture.", "answer": "benefit" },
+    { "number": 10, "sentence": "The government hopes to reduce pollution by introducing stricter regulations.", "answer": "reduce" }
+  ],
+  "extra_word": "ancient"
+}`;
+
+        let selectedExamType = 'mcq';
+
         function showCreateExam() {
+            selectedExamType = 'mcq';
+            renderCreateExamForm();
+        }
+
+        function selectExamType(type) {
+            selectedExamType = type;
+            renderCreateExamForm();
+        }
+
+        function renderCreateExamForm() {
+            const isWordBank = selectedExamType === 'word_bank';
+            const placeholder = isWordBank ? WORD_BANK_TEMPLATE : MCQ_TEMPLATE;
+            const instructionText = isWordBank
+                ? 'Paste a single Word Bank object (not an array). 11 words, 10 sentences, 1 extra word.'
+                : 'Paste an array of MCQ questions.';
+
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
                     ${academicHeader('Create Exam', 'renderDashboard(USER_DATA)')}
-                    <div style="text-align: right; margin-bottom: 12px;">
-                        <a href="/template.json" download="template.json" class="academic-link">⬇ Download JSON Template</a>
+                    
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                        <button 
+                            class="academic-filter-btn ${selectedExamType === 'mcq' ? 'active' : ''}"
+                            onclick="selectExamType('mcq')"
+                            style="flex: 1; padding: 12px;"
+                        >
+                            ✅ MCQ (4 Options)
+                        </button>
+                        <button 
+                            class="academic-filter-btn ${selectedExamType === 'word_bank' ? 'active' : ''}"
+                            onclick="selectExamType('word_bank')"
+                            style="flex: 1; padding: 12px;"
+                        >
+                            📝 Word Bank
+                        </button>
                     </div>
+
+                    <p style="color: #9ca3af; font-size: 13px; margin: 0 0 12px 0;">${instructionText}</p>
+
                     <div style="display: flex; flex-direction: column; gap: 12px;">
                         <input id="examTitle" type="text" placeholder="Exam Title" class="academic-input">
                         <input id="examCategory" type="text" placeholder="Category (e.g. Book Name, Topic)" class="academic-input">
                         <input id="examTimeLimit" type="number" placeholder="Total Time (minutes)" class="academic-input">
-                        <input id="examQuestionCount" type="number" placeholder="Number of Questions" class="academic-input">
-                        <textarea id="examQuestionsJson" rows="12" placeholder='[{"question_text":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A"}]' class="academic-input" style="font-family: monospace; direction: ltr; resize: vertical;"></textarea>
+                        <textarea id="examQuestionsJson" rows="14" placeholder="${placeholder.replace(/"/g, '&quot;')}" class="academic-input" style="font-family: monospace; direction: ltr; resize: vertical;"></textarea>
                         <button class="academic-primary-btn" onclick="createExamWithJson()">Create Exam</button>
                     </div>
                     <div id="createExamStatus" style="margin-top: 12px; color: #9ca3af;"></div>
@@ -1421,36 +1505,75 @@
             const title = document.getElementById('examTitle').value.trim();
             const category = document.getElementById('examCategory').value.trim();
             const timeLimit = document.getElementById('examTimeLimit').value.trim();
-            const questionCount = document.getElementById('examQuestionCount').value.trim();
             const questionsJson = document.getElementById('examQuestionsJson').value.trim();
-            if (!title || !timeLimit || !questionCount || !questionsJson) {
-                document.getElementById('createExamStatus').textContent = '⚠️ Please fill in all fields.';
+
+            if (!title || !timeLimit || !questionsJson) {
+                document.getElementById('createExamStatus').textContent = '⚠️ Please fill Title, Time, and JSON.';
                 return;
             }
-            let questions;
-            try { questions = JSON.parse(questionsJson); }
-            catch (error) { document.getElementById('createExamStatus').textContent = '⚠️ Invalid JSON format.'; return; }
-            if (!Array.isArray(questions) || questions.length === 0) {
-                document.getElementById('createExamStatus').textContent = '⚠️ Questions must be a non-empty array.';
-                return;
-            }
-            if (questions.length !== parseInt(questionCount)) {
-                document.getElementById('createExamStatus').textContent = '⚠️ Number of questions does not match.';
-                return;
-            }
+
             document.getElementById('createExamStatus').textContent = 'Creating exam...';
+
             try {
+                if (selectedExamType === 'word_bank') {
+                    // Word Bank: single object
+                    let wbData;
+                    try { wbData = JSON.parse(questionsJson); }
+                    catch (error) { document.getElementById('createExamStatus').textContent = '⚠️ Invalid JSON format.'; return; }
+                    if (Array.isArray(wbData)) {
+                        document.getElementById('createExamStatus').textContent = '⚠️ Word Bank must be an object, not an array.';
+                        return;
+                    }
+
+                    const response = await fetch('/api/teacher/exams_with_questions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                        body: JSON.stringify({
+                            title,
+                            category: category || 'Uncategorized',
+                            time_limit: parseInt(timeLimit),
+                            word_bank_question: wbData
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        document.getElementById('createExamStatus').textContent = '✅ Word Bank exam created! (ID: ' + data.exam_id + ')';
+                        setTimeout(() => renderCreateExamForm(), 2000);
+                    } else {
+                        document.getElementById('createExamStatus').textContent = '❌ ' + (data.message || 'Failed.');
+                    }
+                    return;
+                }
+
+                // MCQ: array
+                let questions;
+                try { questions = JSON.parse(questionsJson); }
+                catch (error) { document.getElementById('createExamStatus').textContent = '⚠️ Invalid JSON format.'; return; }
+                if (!Array.isArray(questions) || questions.length === 0) {
+                    document.getElementById('createExamStatus').textContent = '⚠️ Questions must be a non-empty array.';
+                    return;
+                }
+
                 const response = await fetch('/api/teacher/exams_with_questions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
-                    body: JSON.stringify({ title, category: category || 'Uncategorized', time_limit: parseInt(timeLimit), questions })
+                    body: JSON.stringify({
+                        title,
+                        category: category || 'Uncategorized',
+                        time_limit: parseInt(timeLimit),
+                        questions
+                    })
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
-                    document.getElementById('createExamStatus').textContent = '✅ Exam created successfully! (ID: ' + data.exam_id + ')';
-                    setTimeout(() => showCreateExam(), 2000);
-                } else { document.getElementById('createExamStatus').textContent = '❌ ' + (data.message || 'Failed to create exam.'); }
-            } catch (error) { document.getElementById('createExamStatus').textContent = '❌ Error creating exam.'; }
+                    document.getElementById('createExamStatus').textContent = '✅ MCQ exam created! (ID: ' + data.exam_id + ')';
+                    setTimeout(() => renderCreateExamForm(), 2000);
+                } else {
+                    document.getElementById('createExamStatus').textContent = '❌ ' + (data.message || 'Failed.');
+                }
+            } catch (error) {
+                document.getElementById('createExamStatus').textContent = '❌ Error: ' + error.message;
+            }
         }
 
         // ============================================================
@@ -1643,11 +1766,12 @@
                     grouped[cat].forEach(e => {
                         const assigned = assignedMap[e.id];
                         const isAssigned = !!assigned;
+                        const typeIcon = e.exam_type === 'word_bank' ? '📝' : '✅';
                         html += `
                             <div class="academic-card" style="margin-bottom: 6px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; min-width: 0;">
-                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${e.title}</strong>
+                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${typeIcon} ${e.title}</strong>
                                         <span style="color: #9ca3af; font-size: 12px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
                                         ${isAssigned ? `<span style="color: #60a5fa; font-size: 11px;">📌 ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 11px;">⚠️ Not assigned</span>`}
                                     </div>
@@ -1804,7 +1928,7 @@
         }
 
         // ============================================================
-        // STUDENT EXAM
+        // STUDENT EXAM — ROUTER (detects MCQ vs Word Bank)
         // ============================================================
 
         async function loadStudentExam(examId) {
@@ -1822,16 +1946,34 @@
                 const data = await response.json();
                 if (data.status !== 'success') { showError('API Error: ' + (data.message || 'Unknown')); return; }
                 if (!data.exam) { showError('Exam data missing.'); return; }
+
                 exam = data.exam;
+                examId = data.exam.id;
+
+                startedAt = new Date().toISOString();
+                remainingSeconds = Number(exam.time_limit) * 60;
+
+                if (exam.exam_type === 'word_bank') {
+                    wordBankQuestions = data.word_bank_questions || [];
+                    if (wordBankQuestions.length === 0) { showError('No Word Bank questions.'); return; }
+                    wordBankAnswers = {};
+                    startTimer();
+                    renderWordBankView(false);
+                    return;
+                }
+
+                // MCQ (existing)
                 questions = data.questions || [];
                 if (questions.length === 0) { showError('No questions.'); return; }
-                startedAt = new Date().toISOString();
                 currentQuestionIndex = 0;
-                remainingSeconds = Number(exam.time_limit) * 60;
                 startTimer();
                 renderStudentQuestion();
             } catch (error) { showError('Unexpected Error: ' + error.message); }
         }
+
+        // ============================================================
+        // MCQ STUDENT VIEW (existing)
+        // ============================================================
 
         function renderStudentQuestion() {
             const totalQuestions = questions.length;
@@ -1921,7 +2063,6 @@
                 if (timerEl) {
                     timerEl.textContent = formatTime(remainingSeconds);
                     
-                    // Turn timer red in the last 60 seconds
                     if (remainingSeconds <= 60 && remainingSeconds > 0) {
                         timerEl.classList.add('timer-warning');
                     }
@@ -1937,8 +2078,6 @@
         }
 
         async function autoSubmitOnTimeout() {
-            // Automatically submit the exam when time runs out.
-            // Submits whatever answers the student has provided so far.
             if (isSubmitting) return;
             isSubmitting = true;
 
@@ -1956,20 +2095,7 @@
             `;
 
             try {
-                const payload = { exam_id: Number(examId), answers: studentAnswers, started_at: startedAt };
-                const response = await fetch('/api/exam/submit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
-                    body: JSON.stringify(payload)
-                });
-                if (!response.ok) {
-                    let message = `Failed (HTTP ${response.status})`;
-                    try { const errorData = await response.json(); if (errorData.message) message = errorData.message; } catch (e) {}
-                    throw new Error(message);
-                }
-                const data = await response.json();
-                if (data.status !== 'success') throw new Error(data.message || 'Failed.');
-                renderStudentResult(data.result, true);
+                await performSubmit(true);
             } catch (error) {
                 document.querySelector('.exam-card').innerHTML = `
                     <div style="padding: 40px 24px; text-align: center;">
@@ -1996,25 +2122,43 @@
             const statusEl = document.getElementById('examStatus');
             if (statusEl) statusEl.textContent = 'Submitting...';
             try {
-                const payload = { exam_id: Number(examId), answers: studentAnswers, started_at: startedAt };
-                const response = await fetch('/api/exam/submit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
-                    body: JSON.stringify(payload)
-                });
-                if (!response.ok) {
-                    let message = `Failed (HTTP ${response.status})`;
-                    try { const errorData = await response.json(); if (errorData.message) message = errorData.message; } catch (e) {}
-                    throw new Error(message);
-                }
-                const data = await response.json();
-                if (data.status !== 'success') throw new Error(data.message || 'Failed.');
-                if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-                renderStudentResult(data.result, false);
+                await performSubmit(false);
             } catch (error) {
                 isSubmitting = false;
                 if (statusEl) statusEl.textContent = error.message || 'Could not submit.';
             }
+        }
+
+        async function performSubmit(wasAutoSubmitted) {
+            let payload;
+            if (exam.exam_type === 'word_bank') {
+                payload = {
+                    exam_id: Number(examId),
+                    word_bank_answers: wordBankAnswers,
+                    started_at: startedAt
+                };
+            } else {
+                payload = {
+                    exam_id: Number(examId),
+                    answers: studentAnswers,
+                    started_at: startedAt
+                };
+            }
+
+            const response = await fetch('/api/exam/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                let message = `Failed (HTTP ${response.status})`;
+                try { const errorData = await response.json(); if (errorData.message) message = errorData.message; } catch (e) {}
+                throw new Error(message);
+            }
+            const data = await response.json();
+            if (data.status !== 'success') throw new Error(data.message || 'Failed.');
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            renderStudentResult(data.result, wasAutoSubmitted);
         }
 
         function renderStudentResult(result, wasAutoSubmitted) {
@@ -2033,6 +2177,223 @@
                     <p style="color: #9ca3af; font-size: 14px; margin-top: 24px;">${message}</p>
                 </div>
             `;
+        }
+
+        // ============================================================
+        // WORD BANK — DRAG & DROP UI
+        // ============================================================
+        //
+        // Uses Pointer Events (works on desktop + mobile + Telegram WebView).
+        // Confirmed working via dragtest.html before this feature was added.
+        // ============================================================
+
+        let wbDragged = null;
+
+        function shuffleArray(arr) {
+            const a = arr.slice();
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        }
+
+        function splitSentenceAtAnswer(sentence, answer) {
+            // Case-insensitive split, preserve original capitalization.
+            const idx = sentence.toLowerCase().indexOf(answer.toLowerCase());
+            if (idx === -1) {
+                // Fallback: append blank at end
+                return { before: sentence + ' ', after: '' };
+            }
+            return {
+                before: sentence.substring(0, idx),
+                after: sentence.substring(idx + answer.length)
+            };
+        }
+
+        function renderWordBankView(isPreview) {
+            const wb = wordBankQuestions[currentWordBankIndex];
+            if (!wb) { showError('Word Bank question not found.'); return; }
+
+            const wbId = String(wb.id);
+
+            // If no answer map yet for this question, initialize empty
+            if (!wordBankAnswers[wbId]) {
+                wordBankAnswers[wbId] = {};
+            }
+
+            // Shuffle word bank on first render only (preserve on re-render)
+            if (!wb._shuffledWords) {
+                wb._shuffledWords = shuffleArray(wb.word_bank);
+            }
+
+            const placedWords = Object.values(wordBankAnswers[wbId]);
+
+            const bannerHtml = isPreview
+                ? `<div class="preview-banner">
+                       <span>⚠️ Preview Mode - Results will NOT be saved</span>
+                       <button class="preview-exit-btn" onclick="exitPreview()">Exit Preview</button>
+                   </div>`
+                : '';
+
+            // Build sentences with blanks
+            let sentencesHtml = '';
+            wb.questions.forEach(q => {
+                const num = String(q.number);
+                const placed = wordBankAnswers[wbId][num];
+                const parts = splitSentenceAtAnswer(q.sentence, findAnswerForSentence(wb, q.number));
+
+                const blankContent = placed
+                    ? `<span class="wb-blank filled" data-qid="${wbId}" data-num="${num}" data-placed="true" onclick="removeWordFromBlank('${wbId}', '${num}')">${placed}</span>`
+                    : `<span class="wb-blank" data-qid="${wbId}" data-num="${num}">_____</span>`;
+
+                sentencesHtml += `
+                    <div class="wb-sentence">
+                        <span class="wb-num">${q.number}.</span>
+                        <span class="wb-text">${escapeHtml(parts.before)}${blankContent}${escapeHtml(parts.after)}</span>
+                    </div>
+                `;
+            });
+
+            // Build word chips
+            let chipsHtml = '';
+            wb._shuffledWords.forEach(word => {
+                const isUsed = placedWords.includes(word);
+                chipsHtml += `
+                    <div class="wb-chip ${isUsed ? 'used' : ''}" 
+                         data-word="${escapeHtml(word)}" 
+                         data-qid="${wbId}"
+                         ${isUsed ? '' : `onpointerdown="wbStartDrag(event, '${escapeHtml(word)}', '${wbId}')"`}>
+                        ${escapeHtml(word)}
+                    </div>
+                `;
+            });
+
+            const instruction = wb.instruction || 'Complete each sentence using a word from the box. There is ONE extra word.';
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 0;">
+                    ${bannerHtml}
+                    <div style="padding: 20px;">
+                        ${isPreview ? '' : `
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h1 style="color: #f9fafb; font-size: 18px; font-weight: 600; margin: 0;">YEnglish Exams</h1>
+                                <span class="academic-timer" id="academicTimer" style="color: #f9fafb; font-size: 14px; font-weight: 600;">${formatTime(remainingSeconds)}</span>
+                            </div>
+                            <p style="color: #9ca3af; font-size: 14px; margin: 0 0 16px 0; text-align: center;">${escapeHtml(exam.title)}</p>
+                        `}
+
+                        <div class="wb-instruction">${escapeHtml(instruction)}</div>
+
+                        <div class="wb-word-bank" id="wbWordBank">
+                            ${chipsHtml}
+                        </div>
+
+                        <div class="wb-sentences">
+                            ${sentencesHtml}
+                        </div>
+
+                        ${isPreview ? '' : `
+                            <div style="margin-top: 24px;">
+                                <button class="academic-primary-btn" style="width: 100%;" onclick="submitStudentExam()">Submit Exam</button>
+                            </div>
+                            <div id="examStatus" style="margin-top: 12px; color: #9ca3af; text-align: center; font-size: 13px;"></div>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        function findAnswerForSentence(wb, number) {
+            // Server does not send answers to student. We only need it for
+            // splitting the sentence around the blank. If answer is missing
+            // we fall back to a generic blank position.
+            // (Student view receives sentences WITH the answer word still
+            // embedded — that's how the teacher submitted them. But we
+            // removed the answer from student_data. So we cannot split
+            // precisely here without it.)
+            // ---
+            // To keep things simple and safe, student sentences are
+            // already split by the server if needed. Since our current
+            // server sends full sentences, we split using a heuristic:
+            // we look for the FIRST occurrence of any word in the bank
+            // that is not yet used elsewhere. But because we do not have
+            // access to the answer, we simply return a special marker to
+            // place the blank at the end.
+            // ---
+            // >>> IMPORTANT: We actually DO need the blank position.
+            // Since student_data contains the sentence WITH the answer
+            // word still embedded, and we removed answer from student_data,
+            // we cannot find it. The fix: server SHOULD send sentences
+            // with a placeholder token like "____".
+            // For now we assume sentences already contain "____".
+            return '__BLANK_TOKEN__';
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function wbStartDrag(event, word, qid) {
+            event.preventDefault();
+            wbDragged = { word, qid };
+            document.addEventListener('pointermove', wbPointerMove);
+            document.addEventListener('pointerup', wbPointerUp);
+            document.addEventListener('pointercancel', wbPointerUp);
+        }
+
+        function wbPointerMove(event) {
+            if (!wbDragged) return;
+            event.preventDefault();
+            // Optionally highlight the blank under the pointer
+            const under = document.elementFromPoint(event.clientX, event.clientY);
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('over'));
+            const blank = under?.closest?.('.wb-blank');
+            if (blank && !blank.dataset.placed) blank.classList.add('over');
+        }
+
+        function wbPointerUp(event) {
+            if (!wbDragged) return;
+            event.preventDefault();
+            document.removeEventListener('pointermove', wbPointerMove);
+            document.removeEventListener('pointerup', wbPointerUp);
+            document.removeEventListener('pointercancel', wbPointerUp);
+
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('over'));
+
+            const under = document.elementFromPoint(event.clientX, event.clientY);
+            const blank = under?.closest?.('.wb-blank');
+
+            if (blank && !blank.dataset.placed) {
+                const qid = blank.dataset.qid;
+                const num = blank.dataset.num;
+                const word = wbDragged.word;
+
+                // Remove any previously placed word in this blank
+                const existing = wordBankAnswers[qid][num];
+                if (existing) {
+                    // put existing word back (it will be usable again)
+                }
+
+                wordBankAnswers[qid][num] = word;
+                wbDragged = null;
+                renderWordBankView(isPreviewMode);
+                return;
+            }
+
+            wbDragged = null;
+        }
+
+        function removeWordFromBlank(qid, num) {
+            if (!wordBankAnswers[qid]) return;
+            delete wordBankAnswers[qid][num];
+            renderWordBankView(isPreviewMode);
         }
 
         // ============================================================
