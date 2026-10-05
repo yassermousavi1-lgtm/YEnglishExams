@@ -29,20 +29,10 @@ INIT_DATA_MAX_AGE = 3600
 # ============================================================
 # COLOR PALETTE FOR STUDENTS
 # ============================================================
-#
-# Must match the palette in database.py so any student created
-# from either place receives a consistent color.
-# ============================================================
 
 STUDENT_COLOR_PALETTE = [
-    "#2563eb",  # Blue
-    "#10b981",  # Green
-    "#f59e0b",  # Amber
-    "#ef4444",  # Red
-    "#8b5cf6",  # Purple
-    "#ec4899",  # Pink
-    "#06b6d4",  # Cyan
-    "#f97316",  # Orange
+    "#2563eb", "#10b981", "#f59e0b", "#ef4444",
+    "#8b5cf6", "#ec4899", "#06b6d4", "#f97316",
 ]
 
 
@@ -50,44 +40,50 @@ def pick_color_for_index(index):
     return STUDENT_COLOR_PALETTE[index % len(STUDENT_COLOR_PALETTE)]
 
 
-def get_database_connection():
-    """
-    Open a SQLite connection with automatic schema migrations.
+# ============================================================
+# DATABASE CONNECTION + AUTOMATIC MIGRATIONS
+# ============================================================
+#
+# Migrations here mirror database.py so that a fresh deployment
+# or a partial checkout can still run without manual step.
+# Both files must remain in sync.
+# ============================================================
 
-    NOTE: The migrations here are duplicated from database.py on purpose,
-    so that a fresh deployment (or a partial checkout) can still run
-    without manually invoking database.py first. Both files must remain
-    in sync for migration behavior.
-    """
+def get_database_connection():
     connection = sqlite3.connect(DATABASE_PATH)
     connection.execute("PRAGMA foreign_keys = ON")
     connection.row_factory = sqlite3.Row
     cursor = connection.cursor()
 
+    # exams.category
     try:
         cursor.execute("ALTER TABLE exams ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
         connection.commit()
     except sqlite3.OperationalError:
         pass
 
+    # results.is_archived
     try:
         cursor.execute("ALTER TABLE results ADD COLUMN is_archived BOOLEAN DEFAULT 0")
         connection.commit()
     except sqlite3.OperationalError:
         pass
 
+    # results.exam_title_snapshot
     try:
         cursor.execute("ALTER TABLE results ADD COLUMN exam_title_snapshot TEXT")
         connection.commit()
     except sqlite3.OperationalError:
         pass
 
+    # students.color
     try:
         cursor.execute("ALTER TABLE students ADD COLUMN color TEXT")
         connection.commit()
     except sqlite3.OperationalError:
         pass
 
+    # attendance table
     try:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS attendance (
@@ -104,16 +100,11 @@ def get_database_connection():
     except sqlite3.OperationalError:
         pass
 
-    # --------------------------------------------------------
-    # Rebuild class_schedule from class_group_id to student_id.
-    # Safe because MVP schedule table was empty when migrated.
-    # --------------------------------------------------------
+    # class_schedule rebuild (student_id based)
     try:
         cursor.execute("PRAGMA table_info(class_schedule)")
         columns = [row["name"] for row in cursor.fetchall()]
-
         if columns and "student_id" not in columns:
-            # Old structure detected: drop and recreate
             cursor.execute("DROP TABLE IF EXISTS class_schedule")
             cursor.execute("""
                 CREATE TABLE class_schedule (
@@ -124,14 +115,11 @@ def get_database_connection():
                     end_time TEXT NOT NULL,
                     notes TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (student_id)
-                        REFERENCES students(id)
-                        ON DELETE CASCADE
+                    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
                 )
             """)
             connection.commit()
         elif not columns:
-            # Table missing entirely: create new structure
             cursor.execute("""
                 CREATE TABLE class_schedule (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -141,26 +129,69 @@ def get_database_connection():
                     end_time TEXT NOT NULL,
                     notes TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (student_id)
-                        REFERENCES students(id)
-                        ON DELETE CASCADE
+                    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
                 )
             """)
             connection.commit()
     except sqlite3.OperationalError:
         pass
 
-    # --------------------------------------------------------
-    # Drop class_groups: students are now the unit of scheduling.
-    # --------------------------------------------------------
+    # drop legacy class_groups
     try:
         cursor.execute("DROP TABLE IF EXISTS class_groups")
         connection.commit()
     except sqlite3.OperationalError:
         pass
 
+    # exams.exam_type
+    try:
+        cursor.execute("ALTER TABLE exams ADD COLUMN exam_type TEXT DEFAULT 'mcq'")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # word_bank_questions table
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS word_bank_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exam_id INTEGER NOT NULL,
+                question_order INTEGER NOT NULL,
+                student_data_json TEXT NOT NULL,
+                answer_key_json TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # word_bank_answers table
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS word_bank_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                result_id INTEGER NOT NULL,
+                exam_id INTEGER NOT NULL,
+                selected_answers_json TEXT,
+                details_json TEXT,
+                correct_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                FOREIGN KEY (result_id) REFERENCES results(id) ON DELETE CASCADE,
+                FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
     return connection
 
+
+# ============================================================
+# TELEGRAM AUTH
+# ============================================================
 
 def validate_telegram_init_data(init_data):
     if not TELEGRAM_BOT_TOKEN:
@@ -233,6 +264,167 @@ def has_student_taken_exam(student_id, exam_id, connection):
     return cursor.fetchone() is not None
 
 
+# ============================================================
+# WORD BANK — HELPERS
+# ============================================================
+
+def detect_question_type(payload):
+    """
+    Return 'word_bank' or 'mcq' based on the JSON structure.
+
+    Detection rules:
+      - If it has 'word_bank' key -> word_bank
+      - Else -> mcq
+    """
+    if isinstance(payload, dict) and "word_bank" in payload:
+        return "word_bank"
+    return "mcq"
+
+
+def validate_word_bank_data(data):
+    """
+    Validate a Word Bank payload.
+
+    Returns (True, None) if valid, else (False, "error message").
+    """
+    if not isinstance(data, dict):
+        return False, "Word Bank data must be an object."
+
+    instruction = data.get("instruction", "").strip()
+    word_bank = data.get("word_bank", [])
+    questions = data.get("questions", [])
+    extra_word = (data.get("extra_word") or "").strip()
+
+    if not instruction:
+        return False, "Missing 'instruction'."
+
+    if not isinstance(word_bank, list) or len(word_bank) != 11:
+        return False, f"'word_bank' must contain exactly 11 words (got {len(word_bank) if isinstance(word_bank, list) else 'N/A'})."
+
+    if not isinstance(questions, list) or len(questions) != 10:
+        return False, f"'questions' must contain exactly 10 sentences (got {len(questions) if isinstance(questions, list) else 'N/A'})."
+
+    if not extra_word:
+        return False, "Missing 'extra_word'."
+
+    # Normalize words for comparison
+    wb_set = set()
+    for w in word_bank:
+        if not isinstance(w, str) or not w.strip():
+            return False, "Every word in 'word_bank' must be a non-empty string."
+        wb_set.add(w.strip().lower())
+
+    if len(wb_set) != 11:
+        return False, "'word_bank' contains duplicate words."
+
+    answers = []
+    for idx, q in enumerate(questions, start=1):
+        if not isinstance(q, dict):
+            return False, f"Question {idx} must be an object."
+        sentence = (q.get("sentence") or "").strip()
+        answer = (q.get("answer") or "").strip()
+        if not sentence:
+            return False, f"Question {idx} is missing 'sentence'."
+        if not answer:
+            return False, f"Question {idx} is missing 'answer'."
+        answers.append(answer.lower())
+
+    # All answers must exist in word_bank
+    for a in answers:
+        if a not in wb_set:
+            return False, f"Answer '{a}' is not in 'word_bank'."
+
+    # Answers must be unique
+    if len(set(answers)) != 10:
+        return False, "Answers contain duplicates; each word must be used at most once."
+
+    # Extra word must be in word_bank and NOT among answers
+    if extra_word.lower() not in wb_set:
+        return False, "'extra_word' is not in 'word_bank'."
+    if extra_word.lower() in set(answers):
+        return False, "'extra_word' appears as an answer; it must remain unused."
+
+    return True, None
+
+
+def build_word_bank_student_data(data):
+    """
+    Return the safe version of the Word Bank data (no answers)
+    that will be sent to the student.
+    """
+    safe_questions = []
+    for q in data.get("questions", []):
+        safe_questions.append({
+            "number": q.get("number"),
+            "sentence": q.get("sentence"),
+        })
+    return {
+        "instruction": data.get("instruction", ""),
+        "word_bank": data.get("word_bank", []),
+        "questions": safe_questions,
+    }
+
+
+def build_word_bank_answer_key(data):
+    """
+    Return the server-only answer key.
+    """
+    answers = []
+    for q in data.get("questions", []):
+        answers.append({
+            "number": q.get("number"),
+            "answer": (q.get("answer") or "").strip(),
+        })
+    return {
+        "answers": answers,
+        "extra_word": (data.get("extra_word") or "").strip(),
+    }
+
+
+def grade_word_bank_submission(student_data, answer_key, submitted_answers):
+    """
+    Grade a Word Bank submission.
+
+    student_data: dict with 'questions' (each has 'number','sentence')
+    answer_key:   dict with 'answers' (list of {number, answer}) and 'extra_word'
+    submitted_answers: dict mapping sentence number (as string) to submitted word
+
+    Returns (score, total, details)
+      - score: number of correct sentences
+      - total: total sentences (usually 10)
+      - details: list of dicts with per-sentence info
+    """
+    answers_map = {}
+    for a in answer_key.get("answers", []):
+        answers_map[str(a.get("number"))] = (a.get("answer") or "").strip().lower()
+
+    total = len(answers_map)
+    score = 0
+    details = []
+
+    for q in student_data.get("questions", []):
+        num = str(q.get("number"))
+        correct = answers_map.get(num, "")
+        submitted_raw = submitted_answers.get(num) if isinstance(submitted_answers, dict) else None
+        submitted = (submitted_raw or "").strip().lower()
+        is_correct = (submitted == correct and correct != "")
+        if is_correct:
+            score += 1
+        details.append({
+            "number": q.get("number"),
+            "sentence": q.get("sentence"),
+            "submitted": submitted_raw if submitted_raw else None,
+            "correct_answer": correct,
+            "is_correct": is_correct,
+        })
+
+    return score, total, details
+
+
+# ============================================================
+# TEACHER NOTIFICATION
+# ============================================================
+
 def send_result_to_teacher(student, exam, score, total_questions, completed_at):
     if not TELEGRAM_BOT_TOKEN or not TEACHER_TELEGRAM_ID:
         return False
@@ -261,6 +453,10 @@ def send_result_to_teacher(student, exam, score, total_questions, completed_at):
         print("Teacher notification error:", error)
         return False
 
+
+# ============================================================
+# CORE ROUTES
+# ============================================================
 
 @app.route("/")
 def mini_app():
@@ -311,6 +507,10 @@ def get_current_user():
         connection.close()
 
 
+# ============================================================
+# STUDENT: EXAM ACCESS
+# ============================================================
+
 @app.route("/api/exam/<int:exam_id>")
 def get_exam(exam_id):
     auth_result = get_authenticated_user()
@@ -327,11 +527,19 @@ def get_exam(exam_id):
         if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
             return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
         cursor = connection.cursor()
-        cursor.execute("SELECT id, title, time_limit FROM exams WHERE id = ?", (exam_id,))
+        cursor.execute("SELECT id, title, time_limit, exam_type FROM exams WHERE id = ?", (exam_id,))
         exam = cursor.fetchone()
         if exam is None:
             return jsonify({"status": "error", "message": "Exam not found."}), 404
-        return jsonify({"status": "success", "exam": {"id": exam["id"], "title": exam["title"], "time_limit": exam["time_limit"]}})
+        return jsonify({
+            "status": "success",
+            "exam": {
+                "id": exam["id"],
+                "title": exam["title"],
+                "time_limit": exam["time_limit"],
+                "exam_type": exam["exam_type"] or "mcq"
+            }
+        })
     finally:
         connection.close()
 
@@ -351,11 +559,54 @@ def get_exam_questions(exam_id):
             return jsonify({"status": "error", "message": "You have already taken this exam."}), 403
         if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
             return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
+
         cursor = connection.cursor()
-        cursor.execute("SELECT id, title, time_limit FROM exams WHERE id = ?", (exam_id,))
+        cursor.execute("SELECT id, title, time_limit, exam_type FROM exams WHERE id = ?", (exam_id,))
         exam = cursor.fetchone()
         if exam is None:
             return jsonify({"status": "error", "message": "Exam not found."}), 404
+
+        exam_type = exam["exam_type"] or "mcq"
+
+        # ---------------- Word Bank ----------------
+        if exam_type == "word_bank":
+            cursor.execute("""
+                SELECT id, question_order, student_data_json
+                FROM word_bank_questions
+                WHERE exam_id = ?
+                ORDER BY question_order ASC
+            """, (exam_id,))
+            rows = cursor.fetchall()
+
+            word_bank_questions = []
+            for r in rows:
+                try:
+                    payload = json.loads(r["student_data_json"])
+                except Exception:
+                    continue
+                word_bank_questions.append({
+                    "id": r["id"],
+                    "question_order": r["question_order"],
+                    "instruction": payload.get("instruction", ""),
+                    "word_bank": payload.get("word_bank", []),
+                    "questions": payload.get("questions", []),
+                })
+
+            total_questions = len(word_bank_questions)
+
+            return jsonify({
+                "status": "success",
+                "exam": {
+                    "id": exam["id"],
+                    "title": exam["title"],
+                    "time_limit": exam["time_limit"],
+                    "exam_type": "word_bank"
+                },
+                "word_bank_questions": word_bank_questions,
+                "total_questions": total_questions
+            })
+
+        # ---------------- MCQ (existing behavior) ----------------
         cursor.execute("""
             SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, eq.question_order
             FROM exam_questions AS eq
@@ -381,7 +632,17 @@ def get_exam_questions(exam_id):
                 "options": options,
                 "question_order": question["question_order"]
             })
-        return jsonify({"status": "success", "exam": {"id": exam["id"], "title": exam["title"], "time_limit": exam["time_limit"]}, "questions": question_list, "total_questions": len(question_list)})
+        return jsonify({
+            "status": "success",
+            "exam": {
+                "id": exam["id"],
+                "title": exam["title"],
+                "time_limit": exam["time_limit"],
+                "exam_type": "mcq"
+            },
+            "questions": question_list,
+            "total_questions": len(question_list)
+        })
     finally:
         connection.close()
 
@@ -397,10 +658,48 @@ def teacher_preview_exam(exam_id):
     connection = get_database_connection()
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT id, title, time_limit FROM exams WHERE id = ?", (exam_id,))
+        cursor.execute("SELECT id, title, time_limit, exam_type FROM exams WHERE id = ?", (exam_id,))
         exam = cursor.fetchone()
         if exam is None:
             return jsonify({"status": "error", "message": "Exam not found."}), 404
+
+        exam_type = exam["exam_type"] or "mcq"
+
+        # ---------------- Word Bank ----------------
+        if exam_type == "word_bank":
+            cursor.execute("""
+                SELECT id, question_order, student_data_json
+                FROM word_bank_questions
+                WHERE exam_id = ?
+                ORDER BY question_order ASC
+            """, (exam_id,))
+            rows = cursor.fetchall()
+            word_bank_questions = []
+            for r in rows:
+                try:
+                    payload = json.loads(r["student_data_json"])
+                except Exception:
+                    continue
+                word_bank_questions.append({
+                    "id": r["id"],
+                    "question_order": r["question_order"],
+                    "instruction": payload.get("instruction", ""),
+                    "word_bank": payload.get("word_bank", []),
+                    "questions": payload.get("questions", []),
+                })
+            return jsonify({
+                "status": "success",
+                "exam": {
+                    "id": exam["id"],
+                    "title": exam["title"],
+                    "time_limit": exam["time_limit"],
+                    "exam_type": "word_bank"
+                },
+                "word_bank_questions": word_bank_questions,
+                "total_questions": len(word_bank_questions)
+            })
+
+        # ---------------- MCQ ----------------
         cursor.execute("""
             SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, eq.question_order
             FROM exam_questions AS eq
@@ -426,7 +725,17 @@ def teacher_preview_exam(exam_id):
                 "options": options,
                 "question_order": question["question_order"]
             })
-        return jsonify({"status": "success", "exam": {"id": exam["id"], "title": exam["title"], "time_limit": exam["time_limit"]}, "questions": question_list, "total_questions": len(question_list)})
+        return jsonify({
+            "status": "success",
+            "exam": {
+                "id": exam["id"],
+                "title": exam["title"],
+                "time_limit": exam["time_limit"],
+                "exam_type": "mcq"
+            },
+            "questions": question_list,
+            "total_questions": len(question_list)
+        })
     finally:
         connection.close()
 
@@ -441,12 +750,10 @@ def submit_exam():
     if not isinstance(data, dict):
         return jsonify({"status": "error", "message": "Request body is missing or invalid."}), 400
     exam_id = data.get("exam_id")
-    answers = data.get("answers")
-    started_at = data.get("started_at")
     if exam_id is None:
         return jsonify({"status": "error", "message": "exam_id is required."}), 400
-    if not isinstance(answers, dict):
-        return jsonify({"status": "error", "message": "answers must be an object."}), 400
+    started_at = data.get("started_at")
+
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
@@ -457,10 +764,99 @@ def submit_exam():
             return jsonify({"status": "error", "message": "You have already taken this exam."}), 403
         if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
             return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
-        cursor.execute("SELECT id, title FROM exams WHERE id = ?", (exam_id,))
+
+        cursor.execute("SELECT id, title, exam_type FROM exams WHERE id = ?", (exam_id,))
         exam = cursor.fetchone()
         if exam is None:
             return jsonify({"status": "error", "message": "Exam not found."}), 404
+
+        exam_type = exam["exam_type"] or "mcq"
+        completed_at = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=3, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
+        if not started_at:
+            started_at = completed_at
+
+        # ---------------- Word Bank submission ----------------
+        if exam_type == "word_bank":
+            answers = data.get("word_bank_answers")
+            if not isinstance(answers, dict):
+                return jsonify({"status": "error", "message": "word_bank_answers must be an object."}), 400
+
+            cursor.execute("""
+                SELECT id, question_order, student_data_json, answer_key_json
+                FROM word_bank_questions
+                WHERE exam_id = ?
+                ORDER BY question_order ASC
+            """, (exam_id,))
+            wb_rows = cursor.fetchall()
+            if not wb_rows:
+                return jsonify({"status": "error", "message": "This exam has no Word Bank questions."}), 400
+
+            total_score = 0
+            total_questions = 0
+            all_details = []
+            for row in wb_rows:
+                try:
+                    student_data = json.loads(row["student_data_json"])
+                    answer_key = json.loads(row["answer_key_json"])
+                except Exception:
+                    continue
+                # The frontend sends answers keyed per Word Bank question id,
+                # OR flat per sentence number. We support both:
+                qid_str = str(row["id"])
+                if qid_str in answers:
+                    submitted = answers[qid_str]
+                else:
+                    submitted = answers  # fallback: flat map
+
+                score, total, details = grade_word_bank_submission(student_data, answer_key, submitted)
+                total_score += score
+                total_questions += total
+                all_details.extend(details)
+
+            if total_questions == 0:
+                return jsonify({"status": "error", "message": "Could not grade Word Bank."}), 400
+
+            cursor.execute("""
+                INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived, exam_title_snapshot)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            """, (student["id"], exam_id, total_score, total_questions, started_at, completed_at, exam["title"]))
+            result_id = cursor.lastrowid
+
+            cursor.execute("""
+                INSERT INTO word_bank_answers (result_id, exam_id, selected_answers_json, details_json, correct_count, total_count)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                result_id,
+                exam_id,
+                json.dumps(answers),
+                json.dumps(all_details),
+                total_score,
+                total_questions
+            ))
+
+            connection.commit()
+            send_result_to_teacher(student, exam, total_score, total_questions, completed_at)
+
+            return jsonify({
+                "status": "success",
+                "message": "Exam submitted successfully.",
+                "result": {
+                    "id": result_id,
+                    "exam_id": exam_id,
+                    "student_id": student["id"],
+                    "score": total_score,
+                    "total_questions": total_questions,
+                    "completed_at": completed_at,
+                    "exam_type": "word_bank",
+                    "teacher_notified": True
+                }
+            })
+
+        # ---------------- MCQ submission (existing behavior) ----------------
+        answers = data.get("answers")
+        if not isinstance(answers, dict):
+            return jsonify({"status": "error", "message": "answers must be an object."}), 400
+
         cursor.execute("""
             SELECT q.id, q.correct_answer, eq.question_order
             FROM exam_questions AS eq
@@ -472,6 +868,7 @@ def submit_exam():
         total_questions = len(questions)
         if total_questions == 0:
             return jsonify({"status": "error", "message": "This exam has no questions."}), 400
+
         score = 0
         for question in questions:
             question_id = str(question["id"])
@@ -482,14 +879,13 @@ def submit_exam():
             submitted_answer = str(submitted_answer).strip().upper()
             if submitted_answer == correct_answer:
                 score += 1
-        completed_at = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=3, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
-        if not started_at:
-            started_at = completed_at
+
         cursor.execute("""
             INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived, exam_title_snapshot)
             VALUES (?, ?, ?, ?, ?, ?, 0, ?)
         """, (student["id"], exam_id, score, total_questions, started_at, completed_at, exam["title"]))
         result_id = cursor.lastrowid
+
         for question in questions:
             question_id = str(question["id"])
             correct_answer = str(question["correct_answer"]).strip().upper()
@@ -504,8 +900,10 @@ def submit_exam():
                 INSERT INTO student_answers (result_id, question_id, selected_answer, is_correct)
                 VALUES (?, ?, ?, ?)
             """, (result_id, question_id, submitted_answer, is_correct))
+
         connection.commit()
         send_result_to_teacher(student, exam, score, total_questions, completed_at)
+
         return jsonify({
             "status": "success",
             "message": "Exam submitted successfully.",
@@ -516,6 +914,7 @@ def submit_exam():
                 "score": score,
                 "total_questions": total_questions,
                 "completed_at": completed_at,
+                "exam_type": "mcq",
                 "teacher_notified": True
             }
         })
@@ -579,7 +978,6 @@ def teacher_add_student():
         cursor.execute("SELECT id FROM groups WHERE id = ?", (group_id,))
         if not cursor.fetchone():
             return jsonify({"status": "error", "message": "Group not found."}), 404
-        # Assign an automatic color based on current student count
         cursor.execute("SELECT COUNT(*) FROM students")
         count = cursor.fetchone()[0]
         color = pick_color_for_index(count)
@@ -699,10 +1097,6 @@ def teacher_get_student_profile(student_id):
 
 @app.route("/api/teacher/student/<int:student_id>/color", methods=["PUT"])
 def teacher_update_student_color(student_id):
-    """
-    Update a student's schedule color.
-    Used by the teacher when the automatic palette color is not ideal.
-    """
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
         return jsonify({"status": "error", "message": auth_result["message"]}), 401
@@ -728,7 +1122,7 @@ def teacher_update_student_color(student_id):
 
 
 # ============================================================
-# ATTENDANCE ENDPOINTS
+# ATTENDANCE
 # ============================================================
 
 @app.route("/api/teacher/attendance", methods=["POST"])
@@ -746,42 +1140,20 @@ def teacher_add_attendance():
     session_number = data.get("session_number")
     if not student_id:
         return jsonify({"status": "error", "message": "student_id is required."}), 400
-
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
         if session_number is None:
-            cursor.execute("""
-                SELECT MAX(session_number) as max_session
-                FROM attendance
-                WHERE student_id = ? AND is_makeup = 0
-            """, (student_id,))
+            cursor.execute("SELECT MAX(session_number) as max_session FROM attendance WHERE student_id = ? AND is_makeup = 0", (student_id,))
             row = cursor.fetchone()
             if row and row["max_session"]:
                 session_number = row["max_session"] + 1
             else:
                 return jsonify({"status": "error", "message": "First session number is required.", "need_first_session": True}), 400
-
         created_at = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=3, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
-
-        cursor.execute("""
-            INSERT INTO attendance (student_id, session_number, extra_minutes, is_makeup, created_at)
-            VALUES (?, ?, 0, 0, ?)
-        """, (student_id, session_number, created_at))
+        cursor.execute("INSERT INTO attendance (student_id, session_number, extra_minutes, is_makeup, created_at) VALUES (?, ?, 0, 0, ?)", (student_id, session_number, created_at))
         connection.commit()
-        attendance_id = cursor.lastrowid
-
-        return jsonify({
-            "status": "success",
-            "message": "Session recorded successfully.",
-            "attendance": {
-                "id": attendance_id,
-                "session_number": session_number,
-                "extra_minutes": 0,
-                "is_makeup": False,
-                "created_at": created_at
-            }
-        })
+        return jsonify({"status": "success", "message": "Session recorded successfully.", "attendance": {"id": cursor.lastrowid, "session_number": session_number, "extra_minutes": 0, "is_makeup": False, "created_at": created_at}})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
@@ -800,27 +1172,22 @@ def teacher_update_attendance(attendance_id):
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"status": "error", "message": "Invalid request."}), 400
-
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
         cursor.execute("SELECT id FROM attendance WHERE id = ?", (attendance_id,))
         if not cursor.fetchone():
             return jsonify({"status": "error", "message": "Attendance not found."}), 404
-
         if "extra_minutes" in data:
             cursor.execute("UPDATE attendance SET extra_minutes = ? WHERE id = ?", (data["extra_minutes"], attendance_id))
-
         if "is_makeup" in data:
             cursor.execute("UPDATE attendance SET is_makeup = ? WHERE id = ?", (1 if data["is_makeup"] else 0, attendance_id))
-
         if "toggle_makeup" in data:
             cursor.execute("SELECT is_makeup FROM attendance WHERE id = ?", (attendance_id,))
             current = cursor.fetchone()
             if current:
                 new_value = 0 if current["is_makeup"] else 1
                 cursor.execute("UPDATE attendance SET is_makeup = ? WHERE id = ?", (new_value, attendance_id))
-
         connection.commit()
         return jsonify({"status": "success", "message": "Attendance updated successfully."})
     except Exception as error:
@@ -831,7 +1198,7 @@ def teacher_update_attendance(attendance_id):
 
 
 # ============================================================
-# GROUPS (Telegram exam groups)
+# GROUPS
 # ============================================================
 
 @app.route("/api/teacher/groups")
@@ -883,7 +1250,7 @@ def teacher_add_group():
 
 
 # ============================================================
-# QUESTION BANK (read-only exposure for teacher)
+# QUESTIONS (MCQ question bank)
 # ============================================================
 
 @app.route("/api/teacher/questions")
@@ -905,7 +1272,7 @@ def teacher_get_questions():
 
 
 # ============================================================
-# EXAMS
+# EXAMS (list / edit / delete)
 # ============================================================
 
 @app.route("/api/teacher/exams")
@@ -920,13 +1287,30 @@ def teacher_get_exams():
     try:
         cursor = connection.cursor()
         cursor.execute("""
-            SELECT e.id, e.title, e.time_limit, e.category, e.created_at, COUNT(eq.id) AS question_count
+            SELECT e.id, e.title, e.time_limit, e.category, e.exam_type, e.created_at,
+                   (SELECT COUNT(*) FROM exam_questions eq WHERE eq.exam_id = e.id) AS mcq_count,
+                   (SELECT COUNT(*) FROM word_bank_questions wb WHERE wb.exam_id = e.id) AS wb_count
             FROM exams e
-            LEFT JOIN exam_questions eq ON eq.exam_id = e.id
-            GROUP BY e.id ORDER BY e.id
+            ORDER BY e.id
         """)
         exams = cursor.fetchall()
-        return jsonify({"status": "success", "exams": [{"id": e["id"], "title": e["title"], "time_limit": e["time_limit"], "category": e["category"] or "Uncategorized", "question_count": e["question_count"], "created_at": e["created_at"]} for e in exams], "total": len(exams)})
+        result_list = []
+        for e in exams:
+            exam_type = e["exam_type"] or "mcq"
+            if exam_type == "word_bank":
+                question_count = e["wb_count"]
+            else:
+                question_count = e["mcq_count"]
+            result_list.append({
+                "id": e["id"],
+                "title": e["title"],
+                "time_limit": e["time_limit"],
+                "category": e["category"] or "Uncategorized",
+                "exam_type": exam_type,
+                "question_count": question_count,
+                "created_at": e["created_at"]
+            })
+        return jsonify({"status": "success", "exams": result_list, "total": len(result_list)})
     finally:
         connection.close()
 
@@ -947,6 +1331,7 @@ def teacher_delete_exam():
     cursor = connection.cursor()
     try:
         cursor.execute("DELETE FROM exam_questions WHERE exam_id = ?", (exam_id,))
+        cursor.execute("DELETE FROM word_bank_questions WHERE exam_id = ?", (exam_id,))
         cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
         cursor.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
         connection.commit()
@@ -990,65 +1375,8 @@ def teacher_update_exam():
         connection.close()
 
 
-@app.route("/api/teacher/exams_with_questions", methods=["POST"])
-def teacher_create_exam_with_questions():
-    auth_result = get_authenticated_user()
-    if not auth_result["valid"]:
-        return jsonify({"status": "error", "message": auth_result["message"]}), 401
-    telegram_user = auth_result["user"]
-    if not is_teacher(telegram_user["id"]):
-        return jsonify({"status": "error", "message": "Access denied."}), 403
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"status": "error", "message": "Request body is missing."}), 400
-    title = data.get("title", "").strip()
-    category = data.get("category", "Uncategorized").strip()
-    time_limit = data.get("time_limit")
-    questions_data = data.get("questions", [])
-    if not title or not time_limit or not questions_data:
-        return jsonify({"status": "error", "message": "title, time_limit, and questions are required."}), 400
-    connection = get_database_connection()
-    cursor = connection.cursor()
-    try:
-        cursor.execute("INSERT INTO exams (title, time_limit, category) VALUES (?, ?, ?)", (title, time_limit, category))
-        exam_id = cursor.lastrowid
-        question_ids = []
-        for q in questions_data:
-            question_text = q.get("question_text", "").strip()
-            option_a = q.get("option_a", "").strip()
-            option_b = q.get("option_b", "").strip()
-            option_c = q.get("option_c", "").strip()
-            option_d = q.get("option_d", "").strip()
-            correct_answer = q.get("correct_answer", "").strip().upper()
-            if not question_text or not correct_answer or correct_answer not in ["A", "B", "C", "D"]:
-                raise ValueError(f"Invalid question data: {question_text[:50]}...")
-            if correct_answer == "A" and not option_a:
-                raise ValueError("Correct answer is A but option_a is empty.")
-            if correct_answer == "B" and not option_b:
-                raise ValueError("Correct answer is B but option_b is empty.")
-            if correct_answer == "C" and not option_c:
-                raise ValueError("Correct answer is C but option_c is empty.")
-            if correct_answer == "D" and not option_d:
-                raise ValueError("Correct answer is D but option_d is empty.")
-            cursor.execute("INSERT INTO questions (question_text, option_a, option_b, option_c, option_d, correct_answer) VALUES (?, ?, ?, ?, ?, ?)", (question_text, option_a, option_b, option_c, option_d, correct_answer))
-            question_id = cursor.lastrowid
-            question_ids.append(question_id)
-        for order, qid in enumerate(question_ids, start=1):
-            cursor.execute("INSERT INTO exam_questions (exam_id, question_id, question_order) VALUES (?, ?, ?)", (exam_id, qid, order))
-        connection.commit()
-        return jsonify({"status": "success", "message": "Exam created successfully.", "exam_id": exam_id, "total_questions": len(question_ids)})
-    except ValueError as error:
-        connection.rollback()
-        return jsonify({"status": "error", "message": str(error)}), 400
-    except Exception as error:
-        connection.rollback()
-        return jsonify({"status": "error", "message": "An internal server error occurred."}), 500
-    finally:
-        connection.close()
-
-
 # ============================================================
-# ASSIGNMENTS & SENDING
+# ASSIGNMENTS
 # ============================================================
 
 @app.route("/api/teacher/assignments")
@@ -1159,10 +1487,16 @@ def teacher_send_exam_by_exam_id():
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        exam = cursor.execute("SELECT id, title, time_limit FROM exams WHERE id = ?", (exam_id,)).fetchone()
+        exam = cursor.execute("SELECT id, title, time_limit, exam_type FROM exams WHERE id = ?", (exam_id,)).fetchone()
         if not exam:
             return jsonify({"status": "error", "message": "Exam not found."}), 404
-        question_count = cursor.execute("SELECT COUNT(*) FROM exam_questions WHERE exam_id = ?", (exam_id,)).fetchone()[0]
+
+        exam_type = exam["exam_type"] or "mcq"
+        if exam_type == "word_bank":
+            question_count = cursor.execute("SELECT COUNT(*) FROM word_bank_questions WHERE exam_id = ?", (exam_id,)).fetchone()[0]
+        else:
+            question_count = cursor.execute("SELECT COUNT(*) FROM exam_questions WHERE exam_id = ?", (exam_id,)).fetchone()[0]
+
         bot_username = "YEnglsihExamsbot"
         deep_link = f"https://t.me/{bot_username}?startapp=exam_{exam_id}"
         import asyncio
@@ -1212,10 +1546,12 @@ def teacher_get_results():
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at, r.is_archived,
                    r.exam_title_snapshot, r.exam_id,
                    s.first_name, s.last_name, s.username, s.telegram_user_id,
-                   g.name AS group_name
+                   g.name AS group_name,
+                   COALESCE(e.exam_type, 'mcq') AS exam_type
             FROM results r
             JOIN students s ON s.id = r.student_id
             JOIN groups g ON g.id = s.group_id
+            LEFT JOIN exams e ON e.id = r.exam_id
             WHERE r.is_archived = 0
             ORDER BY r.completed_at DESC
         """)
@@ -1229,7 +1565,8 @@ def teacher_get_results():
                 "exam_title": r["exam_title_snapshot"] or "Deleted Exam",
                 "exam_id": r["exam_id"], "score": r["score"],
                 "total_questions": r["total_questions"], "percentage": percentage,
-                "group_name": r["group_name"], "started_at": r["started_at"], "completed_at": r["completed_at"]
+                "group_name": r["group_name"], "started_at": r["started_at"], "completed_at": r["completed_at"],
+                "exam_type": r["exam_type"]
             })
         return jsonify({"status": "success", "results": result_list, "total": len(result_list)})
     finally:
@@ -1336,15 +1673,61 @@ def teacher_result_details(result_id):
         cursor = connection.cursor()
         cursor.execute("""
             SELECT r.id, r.score, r.total_questions, r.started_at, r.completed_at,
-                   r.exam_title_snapshot,
+                   r.exam_title_snapshot, r.exam_id,
+                   COALESCE(e.exam_type, 'mcq') AS exam_type,
                    s.first_name, s.last_name, s.telegram_user_id
             FROM results r
             JOIN students s ON s.id = r.student_id
+            LEFT JOIN exams e ON e.id = r.exam_id
             WHERE r.id = ?
         """, (result_id,))
         result = cursor.fetchone()
         if not result:
             return jsonify({"status": "error", "message": "Result not found."}), 404
+
+        exam_type = result["exam_type"] or "mcq"
+
+        # ---------------- Word Bank details ----------------
+        if exam_type == "word_bank":
+            cursor.execute("""
+                SELECT selected_answers_json, details_json
+                FROM word_bank_answers
+                WHERE result_id = ?
+                LIMIT 1
+            """, (result_id,))
+            wb = cursor.fetchone()
+
+            details = []
+            if wb and wb["details_json"]:
+                try:
+                    details = json.loads(wb["details_json"])
+                except Exception:
+                    details = []
+
+            wrong_list = []
+            for d in details:
+                if not d.get("is_correct"):
+                    wrong_list.append({
+                        "question_text": d.get("sentence", ""),
+                        "selected_answer": d.get("submitted") or "No answer",
+                        "correct_answer": d.get("correct_answer", "")
+                    })
+
+            return jsonify({
+                "status": "success",
+                "result": {
+                    "id": result["id"],
+                    "student_name": f"{result['first_name']} {result['last_name'] or ''}".strip(),
+                    "exam_title": result["exam_title_snapshot"] or "Deleted Exam",
+                    "score": result["score"],
+                    "total_questions": result["total_questions"],
+                    "completed_at": result["completed_at"],
+                    "exam_type": "word_bank",
+                    "wrong_answers": wrong_list
+                }
+            })
+
+        # ---------------- MCQ details (existing) ----------------
         cursor.execute("""
             SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_answer,
                    sa.selected_answer, sa.is_correct
@@ -1377,6 +1760,7 @@ def teacher_result_details(result_id):
                 "score": result["score"],
                 "total_questions": result["total_questions"],
                 "completed_at": result["completed_at"],
+                "exam_type": "mcq",
                 "wrong_answers": wrong_list
             }
         })
@@ -1385,12 +1769,130 @@ def teacher_result_details(result_id):
 
 
 # ============================================================
-# CLASS SCHEDULE ENDPOINTS (student-based)
+# CREATE EXAM (auto-detect MCQ vs Word Bank)
 # ============================================================
-#
-# Each schedule row is a private class session tied to a student.
-# The class_groups concept has been removed — students themselves
-# are the "classes" in this system.
+
+@app.route("/api/teacher/exams_with_questions", methods=["POST"])
+def teacher_create_exam_with_questions():
+    """
+    Accepts two formats:
+
+      MCQ:        { title, category, time_limit, questions: [ {question_text, option_a..d, correct_answer}, ... ] }
+
+      Word Bank:  { title, category, time_limit, word_bank_question: { instruction, word_bank, questions, extra_word } }
+
+    The presence of 'word_bank_question' determines the exam type.
+    Otherwise it defaults to MCQ.
+    """
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Request body is missing."}), 400
+
+    title = data.get("title", "").strip()
+    category = data.get("category", "Uncategorized").strip()
+    time_limit = data.get("time_limit")
+    if not title or not time_limit:
+        return jsonify({"status": "error", "message": "title and time_limit are required."}), 400
+
+    # --------------------------------------------------------
+    # Word Bank path
+    # --------------------------------------------------------
+    word_bank_payload = data.get("word_bank_question")
+    if word_bank_payload is not None:
+        valid, err = validate_word_bank_data(word_bank_payload)
+        if not valid:
+            return jsonify({"status": "error", "message": err}), 400
+
+        student_data = build_word_bank_student_data(word_bank_payload)
+        answer_key = build_word_bank_answer_key(word_bank_payload)
+
+        connection = get_database_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO exams (title, time_limit, category, exam_type) VALUES (?, ?, ?, ?)",
+                (title, time_limit, category, "word_bank")
+            )
+            exam_id = cursor.lastrowid
+            cursor.execute("""
+                INSERT INTO word_bank_questions (exam_id, question_order, student_data_json, answer_key_json)
+                VALUES (?, ?, ?, ?)
+            """, (
+                exam_id,
+                1,
+                json.dumps(student_data),
+                json.dumps(answer_key)
+            ))
+            connection.commit()
+            return jsonify({
+                "status": "success",
+                "message": "Word Bank exam created successfully.",
+                "exam_id": exam_id,
+                "exam_type": "word_bank",
+                "total_questions": 1
+            })
+        except Exception as error:
+            connection.rollback()
+            print("WORD BANK CREATE ERROR:", error)
+            return jsonify({"status": "error", "message": "An internal server error occurred."}), 500
+        finally:
+            connection.close()
+
+    # --------------------------------------------------------
+    # MCQ path (existing behavior)
+    # --------------------------------------------------------
+    questions_data = data.get("questions", [])
+    if not questions_data:
+        return jsonify({"status": "error", "message": "questions are required."}), 400
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("INSERT INTO exams (title, time_limit, category, exam_type) VALUES (?, ?, ?, ?)", (title, time_limit, category, "mcq"))
+        exam_id = cursor.lastrowid
+        question_ids = []
+        for q in questions_data:
+            question_text = q.get("question_text", "").strip()
+            option_a = q.get("option_a", "").strip()
+            option_b = q.get("option_b", "").strip()
+            option_c = q.get("option_c", "").strip()
+            option_d = q.get("option_d", "").strip()
+            correct_answer = q.get("correct_answer", "").strip().upper()
+            if not question_text or not correct_answer or correct_answer not in ["A", "B", "C", "D"]:
+                raise ValueError(f"Invalid question data: {question_text[:50]}...")
+            if correct_answer == "A" and not option_a:
+                raise ValueError("Correct answer is A but option_a is empty.")
+            if correct_answer == "B" and not option_b:
+                raise ValueError("Correct answer is B but option_b is empty.")
+            if correct_answer == "C" and not option_c:
+                raise ValueError("Correct answer is C but option_c is empty.")
+            if correct_answer == "D" and not option_d:
+                raise ValueError("Correct answer is D but option_d is empty.")
+            cursor.execute("INSERT INTO questions (question_text, option_a, option_b, option_c, option_d, correct_answer) VALUES (?, ?, ?, ?, ?, ?)", (question_text, option_a, option_b, option_c, option_d, correct_answer))
+            question_id = cursor.lastrowid
+            question_ids.append(question_id)
+        for order, qid in enumerate(question_ids, start=1):
+            cursor.execute("INSERT INTO exam_questions (exam_id, question_id, question_order) VALUES (?, ?, ?)", (exam_id, qid, order))
+        connection.commit()
+        return jsonify({"status": "success", "message": "Exam created successfully.", "exam_id": exam_id, "exam_type": "mcq", "total_questions": len(question_ids)})
+    except ValueError as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 400
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": "An internal server error occurred."}), 500
+    finally:
+        connection.close()
+
+
+# ============================================================
+# CLASS SCHEDULE (student-based)
 # ============================================================
 
 @app.route("/api/teacher/schedule", methods=["GET"])
