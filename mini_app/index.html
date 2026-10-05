@@ -2221,7 +2221,32 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
+        function finishWordBankPreview() {
+            // In preview mode, count how many sentences have a word placed.
+            const wb = wordBankQuestions[currentWordBankIndex];
+            if (!wb) { exitPreview(); return; }
 
+            const wbId = String(wb.id);
+            const placed = wordBankAnswers[wbId] || {};
+            const answered = Object.keys(placed).length;
+            const total = wb.questions.length;
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 0;">
+                    <div class="preview-banner">
+                        <span>⚠️ Preview Mode - Results will NOT be saved</span>
+                        <button class="preview-exit-btn" onclick="exitPreview()">Exit Preview</button>
+                    </div>
+                    <div style="padding: 40px 24px; text-align: center;">
+                        <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
+                        <h1 style="color: #60a5fa; font-size: 24px; font-weight: 700; margin: 0 0 16px 0;">Preview Completed!</h1>
+                        <p style="color: #9ca3af; font-size: 14px; margin: 0;">You answered ${answered} out of ${total} sentences.</p>
+                        <p style="color: #6b7280; font-size: 13px; margin: 16px 0;">(No results were saved)</p>
+                        <button class="academic-primary-btn" style="margin-top: 24px;" onclick="exitPreview()">Exit Preview</button>
+                    </div>
+                </div>
+            `;
+        }
         function renderWordBankView(isPreview) {
             const wb = wordBankQuestions[currentWordBankIndex];
             if (!wb) { showError('Word Bank question not found.'); return; }
@@ -2317,7 +2342,11 @@
                             ${sentencesHtml}
                         </div>
 
-                        ${isPreview ? '' : `
+                        ${isPreview ? `
+                            <button class="academic-primary-btn wb-submit-btn" onclick="finishWordBankPreview()">
+                                Finish Preview
+                            </button>
+                        ` : `
                             <button class="academic-primary-btn wb-submit-btn" onclick="submitStudentExam()">
                                 ✓ Submit Exam
                             </button>
