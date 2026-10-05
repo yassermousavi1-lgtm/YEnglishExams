@@ -351,13 +351,40 @@ def build_word_bank_student_data(data):
     """
     Return the safe version of the Word Bank data (no answers)
     that will be sent to the student.
+
+    IMPORTANT: The sentence stored in the DB contains the full
+    sentence WITH the answer word embedded. The student must
+    NOT see the answer. Therefore we REPLACE the answer word
+    in the sentence with a visible blank marker "_____".
+
+    The frontend can then split on this marker to render a
+    proper blank box.
     """
+    BLANK_MARKER = "_____"
+
     safe_questions = []
     for q in data.get("questions", []):
+        sentence = q.get("sentence", "")
+        answer = (q.get("answer") or "").strip()
+        blank_sentence = sentence
+
+        if answer and sentence:
+            # Case-insensitive replacement of the FIRST occurrence only.
+            lower_sentence = sentence.lower()
+            lower_answer = answer.lower()
+            idx = lower_sentence.find(lower_answer)
+            if idx != -1:
+                blank_sentence = (
+                    sentence[:idx] +
+                    BLANK_MARKER +
+                    sentence[idx + len(answer):]
+                )
+
         safe_questions.append({
             "number": q.get("number"),
-            "sentence": q.get("sentence"),
+            "sentence": blank_sentence,
         })
+
     return {
         "instruction": data.get("instruction", ""),
         "word_bank": data.get("word_bank", []),
