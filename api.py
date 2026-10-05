@@ -280,10 +280,15 @@ def detect_question_type(payload):
         return "word_bank"
     return "mcq"
 
-
 def validate_word_bank_data(data):
     """
     Validate a Word Bank payload.
+
+    Flexible rules (any number of sentences):
+      - word_bank length must equal questions length + 1
+        (exactly ONE extra/distractor word).
+      - All answers must exist in word_bank and be unique.
+      - extra_word must exist in word_bank and NOT be one of the answers.
 
     Returns (True, None) if valid, else (False, "error message").
     """
@@ -298,11 +303,18 @@ def validate_word_bank_data(data):
     if not instruction:
         return False, "Missing 'instruction'."
 
-    if not isinstance(word_bank, list) or len(word_bank) != 11:
-        return False, f"'word_bank' must contain exactly 11 words (got {len(word_bank) if isinstance(word_bank, list) else 'N/A'})."
+    if not isinstance(word_bank, list) or len(word_bank) < 2:
+        return False, f"'word_bank' must contain at least 2 words (got {len(word_bank) if isinstance(word_bank, list) else 'N/A'})."
 
-    if not isinstance(questions, list) or len(questions) != 10:
-        return False, f"'questions' must contain exactly 10 sentences (got {len(questions) if isinstance(questions, list) else 'N/A'})."
+    if not isinstance(questions, list) or len(questions) < 1:
+        return False, f"'questions' must contain at least 1 sentence (got {len(questions) if isinstance(questions, list) else 'N/A'})."
+
+    # Rule: word_bank must have EXACTLY one extra word.
+    if len(word_bank) != len(questions) + 1:
+        return False, (
+            f"'word_bank' must contain exactly {len(questions) + 1} words "
+            f"when there are {len(questions)} sentences (got {len(word_bank)})."
+        )
 
     if not extra_word:
         return False, "Missing 'extra_word'."
@@ -314,7 +326,7 @@ def validate_word_bank_data(data):
             return False, "Every word in 'word_bank' must be a non-empty string."
         wb_set.add(w.strip().lower())
 
-    if len(wb_set) != 11:
+    if len(wb_set) != len(word_bank):
         return False, "'word_bank' contains duplicate words."
 
     answers = []
@@ -335,7 +347,7 @@ def validate_word_bank_data(data):
             return False, f"Answer '{a}' is not in 'word_bank'."
 
     # Answers must be unique
-    if len(set(answers)) != 10:
+    if len(set(answers)) != len(questions):
         return False, "Answers contain duplicates; each word must be used at most once."
 
     # Extra word must be in word_bank and NOT among answers
@@ -345,6 +357,7 @@ def validate_word_bank_data(data):
         return False, "'extra_word' appears as an answer; it must remain unused."
 
     return True, None
+
 
 
 def build_word_bank_student_data(data):
