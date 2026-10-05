@@ -8,13 +8,22 @@ from pathlib import Path
 #
 # All application data is stored in one SQLite database.
 #
-# The database.py file is responsible only for:
+# This file is responsible only for:
 # 1. Creating the database structure.
 # 2. Opening database connections.
 # 3. Running automatic migrations when structure changes.
 #
-# Business logic such as creating exams, importing questions,
-# sending exams, grading students, etc. belongs in other files.
+# Business logic (creating exams, importing questions, grading,
+# sending exams, etc.) lives in other files.
+#
+# ARCHITECTURE NOTE:
+#   The database supports TWO independent question types:
+#     1. MCQ            -> questions, exam_questions
+#     2. Word Bank      -> word_bank_questions
+#
+#   Each exam declares its type via exams.exam_type
+#   ('mcq' or 'word_bank'). The two types never share rows.
+#   Existing MCQ data is fully preserved.
 # ============================================================
 
 
@@ -27,9 +36,7 @@ DATABASE_PATH = BASE_DIR / "exam.db"
 # ============================================================
 #
 # Each student gets an automatic color from this cycle.
-# This helps visually distinguish students in the weekly schedule.
-#
-# Colors are reused after the list is exhausted.
+# Used to visually distinguish students in the weekly schedule.
 # ============================================================
 
 STUDENT_COLOR_PALETTE = [
@@ -45,10 +52,7 @@ STUDENT_COLOR_PALETTE = [
 
 
 def pick_color_for_index(index):
-    """
-    Return a color from the palette based on the given index.
-    Cycles through the palette when the index exceeds its length.
-    """
+    """Return a color from the palette based on the given index."""
     return STUDENT_COLOR_PALETTE[index % len(STUDENT_COLOR_PALETTE)]
 
 
@@ -77,18 +81,17 @@ def get_connection():
 # ============================================================
 #
 # This function handles schema upgrades for existing databases.
-# Each migration is wrapped in a try/except block so that:
-# - If the column/table already exists, the error is silently ignored.
+# Each migration is wrapped in try/except so:
+# - If the column/table already exists, the error is ignored.
 # - New installations skip migrations that are not needed.
 #
-# IMPORTANT: Never drop data as part of a migration without a backup.
+# IMPORTANT: Never drop user data as part of a migration.
 # ============================================================
 
 def run_migrations(connection):
     """
     Apply incremental schema changes to an existing database.
-
-    Each ALTER/CREATE is idempotent — running it twice is safe.
+    All changes are ADDITIVE — no existing data is modified.
     """
 
     cursor = connection.cursor()
@@ -121,12 +124,12 @@ def run_migrations(connection):
         pass
 
     # --------------------------------------------------------
-    # Migration 4: add color to students (for schedule visual)
+    # Migration 4: add color to students (schedule visual)
     # --------------------------------------------------------
     try:
         cursor.execute("ALTER TABLE students ADD COLUMN color TEXT")
         connection.commit()
-        # Assign palette colors to existing students who have no color
+        # Assign palette colors to any student missing a color
         _assign_missing_colors(cursor)
         connection.commit()
     except sqlite3.OperationalError:
@@ -152,20 +155,13 @@ def run_migrations(connection):
         pass
 
     # --------------------------------------------------------
-    # Migration 6: rebuild class_schedule to use student_id
-    #
-    # The old schedule table used class_group_id. The new one
-    # links directly to students. Since MVP schedule was empty,
-    # we drop and recreate instead of migrating rows.
+    # Migration 6: rebuild class_schedule with student_id
     # --------------------------------------------------------
     _migrate_schedule_table(cursor)
     connection.commit()
 
     # --------------------------------------------------------
-    # Migration 7: drop class_groups table
-    #
-    # Students themselves are now the "classes". The separate
-    # class_groups concept has been removed.
+    # Migration 7: drop legacy class_groups table
     # --------------------------------------------------------
     try:
         cursor.execute("DROP TABLE IF EXISTS class_groups")
@@ -173,12 +169,84 @@ def run_migrations(connection):
     except sqlite3.OperationalError:
         pass
 
+    # --------------------------------------------------------
+    # Migration 8: add exam_type to exams
+    #
+    # Values: 'mcq' (default, for all existing exams)
+    #         'word_bank' (new question type)
+    #
+    # This is SAFE because:
+    # - DEFAULT 'mcq' fills existing rows automatically.
+    # - No existing data is modified.
+    # --------------------------------------------------------
+    try:
+        cursor.execute("ALTER TABLE exams ADD COLUMN exam_type TEXT DEFAULT 'mcq'")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # --------------------------------------------------------
+    # Migration 9: create word_bank_questions table
+    #
+    # One row per Word Bank question (an entire 10-sentence set
+    # is treated as ONE question).
+    #
+    # student_data_json : JSON sent to the student (NO answers).
+    # answer_key_json   : JSON with answers + extra_word (server-only).
+    # --------------------------------------------------------
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS word_bank_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exam_id INTEGER NOT NULL,
+                question_order INTEGER NOT NULL,
+                student_data_json TEXT NOT NULL,
+                answer_key_json TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (exam_id)
+                    REFERENCES exams(id)
+                    ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # --------------------------------------------------------
+    # Migration 10: create word_bank_answers table
+    #
+    # One row per completed Word Bank attempt.
+    #
+    # selected_answers_json : JSON of {sentence_number: chosen_word}
+    # details_json          : JSON list of per-sentence results
+    # correct_count         : how many sentences were correct
+    # total_count           : total sentences (normally 10)
+    # --------------------------------------------------------
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS word_bank_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                result_id INTEGER NOT NULL,
+                exam_id INTEGER NOT NULL,
+                selected_answers_json TEXT,
+                details_json TEXT,
+                correct_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                FOREIGN KEY (result_id)
+                    REFERENCES results(id)
+                    ON DELETE CASCADE,
+                FOREIGN KEY (exam_id)
+                    REFERENCES exams(id)
+                    ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
 
 def _assign_missing_colors(cursor):
-    """
-    Assign palette colors to students that don't have a color yet.
-    Colors are assigned in student ID order for stability.
-    """
+    """Assign palette colors to students that don't have a color yet."""
     cursor.execute("SELECT id FROM students WHERE color IS NULL OR color = '' ORDER BY id")
     rows = cursor.fetchall()
     for index, row in enumerate(rows):
@@ -199,7 +267,6 @@ def _migrate_schedule_table(cursor):
     cursor.execute("PRAGMA table_info(class_schedule)")
     columns = [row["name"] for row in cursor.fetchall()]
 
-    # If table does not exist yet, create the new version directly.
     if not columns:
         cursor.execute("""
             CREATE TABLE class_schedule (
@@ -217,11 +284,9 @@ def _migrate_schedule_table(cursor):
         """)
         return
 
-    # If student_id already exists, table is already migrated.
     if "student_id" in columns:
         return
 
-    # Otherwise: migrate from old structure (class_group_id based).
     cursor.execute("DROP TABLE IF EXISTS class_schedule")
     cursor.execute("""
         CREATE TABLE class_schedule (
@@ -250,7 +315,6 @@ def _migrate_schedule_table(cursor):
 def create_database():
     """
     Create all tables required by the application.
-
     CREATE TABLE IF NOT EXISTS is used so running this file
     again does not delete existing data.
     """
@@ -274,7 +338,7 @@ def create_database():
     # STUDENTS
     #
     # Each student belongs to exactly one group (for exams).
-    # The color column is used for schedule visualization.
+    # color is used for schedule visualization.
     # --------------------------------------------------------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS students (
@@ -293,7 +357,7 @@ def create_database():
     """)
 
     # --------------------------------------------------------
-    # QUESTIONS (question bank)
+    # QUESTIONS (MCQ question bank)
     # --------------------------------------------------------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS questions (
@@ -311,6 +375,8 @@ def create_database():
 
     # --------------------------------------------------------
     # EXAMS
+    #
+    # exam_type: 'mcq' (default) or 'word_bank'
     # --------------------------------------------------------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS exams (
@@ -318,12 +384,13 @@ def create_database():
             title TEXT NOT NULL,
             time_limit INTEGER NOT NULL,
             category TEXT DEFAULT 'Uncategorized',
+            exam_type TEXT DEFAULT 'mcq',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
     # --------------------------------------------------------
-    # EXAM QUESTIONS (links questions to exams)
+    # EXAM QUESTIONS (links MCQ questions to exams)
     # --------------------------------------------------------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS exam_questions (
@@ -365,7 +432,7 @@ def create_database():
     """)
 
     # --------------------------------------------------------
-    # STUDENT ANSWERS (per-question answers of each result)
+    # STUDENT ANSWERS (per-question MCQ answers)
     # --------------------------------------------------------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS student_answers (
@@ -415,11 +482,6 @@ def create_database():
 
     # --------------------------------------------------------
     # CLASS SCHEDULE (weekly private class sessions)
-    #
-    # Each row represents one session:
-    #   - Which student
-    #   - Which day of week
-    #   - Start and end time
     # --------------------------------------------------------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS class_schedule (
@@ -432,6 +494,49 @@ def create_database():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id)
                 REFERENCES students(id)
+                ON DELETE CASCADE
+        )
+    """)
+
+    # --------------------------------------------------------
+    # WORD BANK QUESTIONS
+    #
+    # One row = one complete Word Bank set (10 sentences).
+    # Kept entirely separate from the MCQ questions table.
+    # --------------------------------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS word_bank_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_id INTEGER NOT NULL,
+            question_order INTEGER NOT NULL,
+            student_data_json TEXT NOT NULL,
+            answer_key_json TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (exam_id)
+                REFERENCES exams(id)
+                ON DELETE CASCADE
+        )
+    """)
+
+    # --------------------------------------------------------
+    # WORD BANK ANSWERS
+    #
+    # One row per completed Word Bank attempt.
+    # --------------------------------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS word_bank_answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            result_id INTEGER NOT NULL,
+            exam_id INTEGER NOT NULL,
+            selected_answers_json TEXT,
+            details_json TEXT,
+            correct_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            FOREIGN KEY (result_id)
+                REFERENCES results(id)
+                ON DELETE CASCADE,
+            FOREIGN KEY (exam_id)
+                REFERENCES exams(id)
                 ON DELETE CASCADE
         )
     """)
@@ -456,7 +561,9 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"Database path: {DATABASE_PATH}")
     print()
-    print("Changes applied:")
-    print("  - students.color added")
-    print("  - class_schedule rebuilt with student_id")
-    print("  - class_groups removed")
+    print("Schema now includes:")
+    print("  - exams.exam_type        (new, default 'mcq')")
+    print("  - word_bank_questions    (new table)")
+    print("  - word_bank_answers      (new table)")
+    print()
+    print("Existing MCQ data is untouched.")
