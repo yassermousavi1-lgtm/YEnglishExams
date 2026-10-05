@@ -151,8 +151,14 @@
         // ============================================================
         // DASHBOARD
         // ============================================================
-
+        function resetCardOverflow() {
+            // Called before rendering any new page inside the exam card.
+            // Ensures the card is scrollable normally on non-Word-Bank pages.
+            const card = document.querySelector('.exam-card');
+            if (card) card.style.overflow = '';
+        }
         function renderDashboard(userData) {
+            resetCardOverflow();
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 24px 20px;">
                     
@@ -2283,6 +2289,8 @@
             });
 
             const instruction = wb.instruction || 'Complete each sentence using a word from the box. There is ONE extra word.';
+            // Enable sticky positioning for the Word Bank only
+            document.querySelector('.exam-card').style.overflow = 'visible';
 
             document.querySelector('.exam-card').innerHTML = `
                 <div class="wb-wrapper">
