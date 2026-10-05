@@ -444,7 +444,6 @@
         }
 
         function showStudentProfileFromSchedule(studentId) {
-            // When opening profile from within schedule, the Back button should return to schedule.
             showStudentProfile(studentId, 'schedule');
         }
 
@@ -509,7 +508,6 @@
             const endValue = isEdit ? session.end_time : '17:00';
             const notesValue = isEdit ? (session.notes || '') : '';
 
-            // Decide where the Back button should return to.
             let backAction;
             if (isEdit && returnToStudentId) {
                 backAction = `showStudentScheduleByStudent(${returnToStudentId})`;
@@ -642,7 +640,6 @@
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
-                    // Refresh schedule data, then return to the student's schedule view
                     await refreshScheduleData();
                     showStudentScheduleByStudent(parseInt(studentId));
                 } else {
@@ -688,7 +685,7 @@
                     scheduleData = scheduleResponse.schedule || [];
                 }
             } catch (e) {
-                // silently ignore — user still on schedule view
+                // silently ignore
             }
         }
 
@@ -1920,13 +1917,75 @@
             timerInterval = setInterval(() => {
                 remainingSeconds--;
                 const timerEl = document.getElementById('academicTimer');
-                if (timerEl) timerEl.textContent = formatTime(remainingSeconds);
+                
+                if (timerEl) {
+                    timerEl.textContent = formatTime(remainingSeconds);
+                    
+                    // Turn timer red in the last 60 seconds
+                    if (remainingSeconds <= 60 && remainingSeconds > 0) {
+                        timerEl.classList.add('timer-warning');
+                    }
+                }
+                
                 if (remainingSeconds <= 0) {
                     clearInterval(timerInterval);
                     timerInterval = null;
-                    isSubmitting = true;
+                    autoSubmitOnTimeout();
+                    return;
                 }
             }, 1000);
+        }
+
+        async function autoSubmitOnTimeout() {
+            // Automatically submit the exam when time runs out.
+            // Submits whatever answers the student has provided so far.
+            if (isSubmitting) return;
+            isSubmitting = true;
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 60px 24px; text-align: center;">
+                    <div style="font-size: 64px; margin-bottom: 20px;">⏱</div>
+                    <h1 style="color: #fca5a5; font-size: 22px; font-weight: 700; margin: 0 0 16px 0;">Time is Up!</h1>
+                    <p style="color: #9ca3af; font-size: 15px; margin: 0;">Submitting your exam automatically...</p>
+                    <div style="margin-top: 32px;">
+                        <div class="academic-progress-bar" style="width: 200px; margin: 0 auto;">
+                            <div class="academic-progress-fill" style="width: 100%; background: #f59e0b;"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const payload = { exam_id: Number(examId), answers: studentAnswers, started_at: startedAt };
+                const response = await fetch('/api/exam/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    let message = `Failed (HTTP ${response.status})`;
+                    try { const errorData = await response.json(); if (errorData.message) message = errorData.message; } catch (e) {}
+                    throw new Error(message);
+                }
+                const data = await response.json();
+                if (data.status !== 'success') throw new Error(data.message || 'Failed.');
+                renderStudentResult(data.result, true);
+            } catch (error) {
+                document.querySelector('.exam-card').innerHTML = `
+                    <div style="padding: 40px 24px; text-align: center;">
+                        <div style="font-size: 56px; margin-bottom: 16px;">⚠️</div>
+                        <h1 style="color: #fca5a5; font-size: 20px; font-weight: 700; margin: 0 0 16px 0;">Time is Up</h1>
+                        <p style="color: #9ca3af; font-size: 14px; margin: 0 0 20px 0;">${error.message || 'Could not submit automatically.'}</p>
+                        <button class="academic-primary-btn" onclick="retryAutoSubmit()">Try Submitting Manually</button>
+                    </div>
+                `;
+                isSubmitting = false;
+            }
+        }
+
+        async function retryAutoSubmit() {
+            isSubmitting = false;
+            await autoSubmitOnTimeout();
         }
 
         async function submitStudentExam() {
@@ -1951,24 +2010,27 @@
                 const data = await response.json();
                 if (data.status !== 'success') throw new Error(data.message || 'Failed.');
                 if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-                renderStudentResult(data.result);
+                renderStudentResult(data.result, false);
             } catch (error) {
                 isSubmitting = false;
                 if (statusEl) statusEl.textContent = error.message || 'Could not submit.';
             }
         }
 
-        function renderStudentResult(result) {
+        function renderStudentResult(result, wasAutoSubmitted) {
             const score = result.score;
             const total = result.total_questions;
             const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+            const message = wasAutoSubmitted
+                ? '⏱ Your exam was submitted automatically because time ran out.'
+                : 'Your result has been saved and sent to the teacher.';
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 40px 24px; text-align: center;">
                     <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
                     <h1 style="color: #60a5fa; font-size: 24px; font-weight: 700; margin: 0 0 24px 0;">Exam Completed</h1>
                     <div class="academic-result-score" style="font-size: 56px; font-weight: 800; color: #f9fafb; margin: 16px 0;">${score} / ${total}</div>
                     <div class="academic-result-percentage" style="font-size: 28px; font-weight: 700; color: #34d399; margin-top: 12px;">${percentage}%</div>
-                    <p style="color: #9ca3af; font-size: 14px; margin-top: 24px;">Your result has been saved and sent to the teacher.</p>
+                    <p style="color: #9ca3af; font-size: 14px; margin-top: 24px;">${message}</p>
                 </div>
             `;
         }

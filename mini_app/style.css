@@ -883,3 +883,24 @@ body {
 .share-btn:active {
     transform: translateY(0);
 }
+/* ============================================================
+   TIMER WARNING (last 60 seconds)
+   ============================================================ */
+
+.timer-warning {
+    color: #fca5a5 !important;
+    background: rgba(69, 26, 26, 0.9) !important;
+    border-color: rgba(239, 68, 68, 0.4) !important;
+    animation: pulse-warning 1s ease-in-out infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+    }
+}
