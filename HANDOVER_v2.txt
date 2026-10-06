@@ -1,0 +1,553 @@
+================================================================================
+YENGLISH EXAMS - PROJECT HANDOVER DOCUMENT
+Version 2.0
+Date: 2026-10-06
+================================================================================
+
+This document is a complete handover to the next AI developer / assistant.
+It contains everything needed to understand, maintain, and extend the
+YEnglish Exams project without breaking existing functionality.
+
+READ THIS DOCUMENT COMPLETELY BEFORE MAKING ANY CHANGES.
+
+================================================================================
+1. WHAT IS THIS PROJECT?
+================================================================================
+
+YEnglish Exams is a Telegram-based English examination system for private
+English classes. Students do NOT need a separate application. Everything
+runs inside Telegram as a Mini App.
+
+The teacher uses it to:
+  - Create exam questions (MCQ and Word Bank Gap-Fill).
+  - Assign exams to Telegram groups.
+  - Send exams to groups with a Start Exam button.
+  - View results and analytics.
+  - Manage students, attendance, and weekly class schedules.
+
+Students use it to:
+  - Open an exam inside Telegram.
+  - Authenticate automatically through Telegram.
+  - Answer questions (MCQ click or Word Bank drag-and-drop).
+  - Submit the exam.
+  - See their result immediately.
+
+Core flow:
+
+  Teacher
+    -> Create Exam (MCQ or Word Bank)
+    -> Assign to Telegram Group
+    -> Send Exam to Group
+    -> Student taps Start Exam
+    -> Telegram Mini App opens
+    -> Flask API authenticates via Telegram initData
+    -> SQLite database returns questions (without answers)
+    -> Student answers
+    -> Flask grades on server
+    -> Result stored in SQLite
+    -> Teacher receives private Telegram notification
+    -> Student sees result
+
+================================================================================
+2. WHAT DOES IT DO? (FEATURES)
+================================================================================
+
+TEACHER FEATURES (inside Mini App):
+  - Dashboard with all management sections.
+  - Add / delete students.
+  - Add groups (Telegram class groups).
+  - Create MCQ exams (4-option multiple choice).
+  - Create Word Bank Gap-Fill exams (drag-and-drop vocabulary).
+  - Send exams to groups with a deep-link Start Exam button.
+  - Preview exams before sending (with Finish Preview button).
+  - View all results (active and archived).
+  - Archive / unarchive results.
+  - Share result details via Telegram.
+  - Student profile with archived results and attendance.
+  - Record attendance sessions per student.
+  - Mark sessions as Make-up or Regular.
+  - Add extra minutes to attendance sessions.
+  - Weekly class schedule (Today + Full Week view).
+  - Add / edit / delete schedule sessions per student.
+  - Share a student's full schedule via Telegram.
+
+STUDENT FEATURES (inside Mini App):
+  - Telegram auto-authentication.
+  - Opens only assigned exams.
+  - MCQ: one question at a time, four options.
+  - Word Bank: drag words from word bank into sentence blanks.
+  - Countdown timer with red warning in last 60 seconds.
+  - Automatic submit when time runs out.
+  - Result displayed immediately after submit.
+
+SUPPORTED QUESTION TYPES:
+  1. MCQ (Multiple Choice - 4 options)
+  2. Word Bank Gap-Fill (drag-and-drop, any number of sentences)
+     - Word bank has exactly ONE extra word (distractor).
+     - word_bank.length must equal questions.length + 1.
+     - Supports any number of sentences (5, 8, 10, 20, etc.)
+     - Student drags words into blanks; clicking a filled blank returns
+       the word to the bank.
+
+================================================================================
+3. TECHNOLOGY STACK
+================================================================================
+
+Operating System (local):  Windows
+Python (local):            C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe
+Python (server):           3.13.1 on PythonAnywhere
+Backend:                   Flask 3.0.3
+Database:                  SQLite (exam.db)
+Frontend:                  HTML, CSS, Vanilla JavaScript
+Platform:                  Telegram Bot API + Telegram Mini Apps
+Hosting (production):      PythonAnywhere
+Version Control:           GitHub + local Windows
+Telegram Bot:              @YEnglsihExamsbot
+
+Local project folder:
+  C:\Users\Yasser Mousavi\Desktop\YEnglishExams
+
+PythonAnywhere project folder:
+  /home/YEnglishExams/YEnglishExams
+
+WSGI file on PythonAnywhere:
+  /var/www/yenglishexams_pythonanywhere_com_wsgi.py
+
+================================================================================
+4. FILES AND THEIR RESPONSIBILITIES
+================================================================================
+
+ROOT FILES (in the project folder):
+
+api.py
+  - The main Flask application.
+  - Serves the Mini App at "/".
+  - Provides all API endpoints under "/api/...".
+  - Handles Telegram authentication (HMAC validation of initData).
+  - Handles exam access control (group-based).
+  - Grades MCQ and Word Bank submissions on the server.
+  - Sends private Telegram notifications to the teacher.
+  - Contains automatic database migrations on every DB connection
+    (duplicated from database.py for robustness).
+  - Contains Word Bank validation, student-data filtering (removes answers),
+    and grading helpers.
+
+database.py
+  - Creates and migrates the SQLite schema.
+  - Defines all tables and the student color palette.
+  - Safe to run repeatedly (uses CREATE TABLE IF NOT EXISTS).
+  - Should be kept in sync with the migrations inside api.py.
+
+exam.db
+  - The main SQLite database.
+  - Contains all real data (students, exams, results, etc.).
+  - MUST NEVER be replaced with an empty database.
+  - MUST NEVER be committed to Git (already in .gitignore).
+
+.gitignore
+  - Prevents exam.db, exam_backup*.db, journal.db, __pycache__/ from
+    being tracked by Git.
+
+mini_app/index.html
+  - The entire Telegram Mini App (single-page app).
+  - Contains:
+    * Teacher Dashboard.
+    * Student list / profile / attendance UI.
+    * Exam list / create / preview / send UI.
+    * Results UI.
+    * Schedule UI (Today card + Full Week).
+    * Student MCQ exam view.
+    * Student Word Bank exam view (drag-and-drop).
+    * All JavaScript logic for the Mini App.
+
+mini_app/style.css
+  - All styling for the Mini App.
+  - Dark theme, academic design.
+  - Contains Word Bank styles (.wb-*), sticky Word Bank, drag ghost,
+    preview banner, timer warning, etc.
+
+mini_app/template.json
+  - Downloadable JSON template for MCQ exams.
+
+LEGACY / DEVELOPMENT FILES (still present, not all used):
+  - add_group.py, add_student.py, add_question.py
+  - assign_exam.py, send_exam.py, create_exam.py
+  - import_questions.py, question_parser.py
+  - check_assignments.py, check_results.py, check_student.py
+  - test_api.py, test_bot.py, test_submit.py
+  - button_test_bot.py (contains a leaked bot token - see warnings)
+  - debug.html, YEnglishExams_Project_Handover_v1_0.txt
+  - Various .bat files (ngrok.bat, start.bat, etc.)
+  These are historical and mostly unused. Do NOT delete without asking.
+
+================================================================================
+5. DATABASE SCHEMA (exam.db)
+================================================================================
+
+All tables use SQLite with foreign keys enabled.
+
+--------------------------------------------------------------------------------
+TABLE: groups
+  Stores Telegram groups (classes) for exam assignment.
+  Columns: id, telegram_group_id (unique), name, created_at
+--------------------------------------------------------------------------------
+TABLE: students
+  Each student belongs to exactly one group.
+  Columns: id, telegram_user_id (unique), first_name, last_name,
+           username, group_id (FK -> groups), color, created_at
+  color: automatic palette color for schedule visualization.
+--------------------------------------------------------------------------------
+TABLE: questions
+  MCQ question bank.
+  Columns: id, question_text, option_a, option_b, option_c, option_d,
+           correct_answer (A/B/C/D), created_at
+  NOTE: This table is for MCQ only. Word Bank uses a separate table.
+--------------------------------------------------------------------------------
+TABLE: exams
+  Exam metadata.
+  Columns: id, title, time_limit, category, exam_type, created_at
+  exam_type: 'mcq' (default) OR 'word_bank'.
+             Determines how questions are loaded and graded.
+--------------------------------------------------------------------------------
+TABLE: exam_questions
+  Links MCQ questions to exams (many-to-many with order).
+  Columns: id, exam_id (FK), question_id (FK), question_order
+  UNIQUE(exam_id, question_id)
+--------------------------------------------------------------------------------
+TABLE: results
+  One row per completed exam attempt (both MCQ and Word Bank).
+  Columns: id, student_id (FK), exam_id (FK), score, total_questions,
+           started_at, completed_at, is_archived, exam_title_snapshot
+  exam_title_snapshot: preserves title even if exam is deleted.
+--------------------------------------------------------------------------------
+TABLE: student_answers
+  Per-question answers for MCQ exams only.
+  Columns: id, result_id (FK), question_id (FK), selected_answer,
+           is_correct
+  NOTE: Word Bank does NOT use this table. It uses word_bank_answers.
+--------------------------------------------------------------------------------
+TABLE: exam_assignments
+  Links exams to groups.
+  Columns: id, exam_id (FK), group_id (FK), assigned_at
+  UNIQUE(exam_id, group_id)
+--------------------------------------------------------------------------------
+TABLE: attendance
+  Attendance sessions per student.
+  Columns: id, student_id (FK), session_number, extra_minutes,
+           is_makeup, created_at
+--------------------------------------------------------------------------------
+TABLE: class_schedule
+  Weekly private class sessions (one row per session).
+  Columns: id, student_id (FK), day_of_week, start_time, end_time,
+           notes, created_at
+  NOTE: Uses student_id (NOT class_group_id). class_groups table was
+        removed in a previous migration.
+--------------------------------------------------------------------------------
+TABLE: word_bank_questions
+  One row = one complete Word Bank set (any number of sentences).
+  Columns: id, exam_id (FK), question_order,
+           student_data_json, answer_key_json, created_at
+
+  student_data_json:
+    JSON sent to the student (NO answers).
+    Sentences have the answer word replaced with "_____".
+    Format:
+      {
+        "instruction": "...",
+        "word_bank": ["...", ...],
+        "questions": [
+          { "number": 1, "sentence": "Regular exercise can _____ your health." },
+          ...
+        ]
+      }
+
+  answer_key_json:
+    Server-only. Contains answers and extra_word.
+    Format:
+      {
+        "answers": [
+          { "number": 1, "answer": "improve" },
+          ...
+        ],
+        "extra_word": "ancient"
+      }
+--------------------------------------------------------------------------------
+TABLE: word_bank_answers
+  One row per completed Word Bank attempt.
+  Columns: id, result_id (FK), exam_id (FK),
+           selected_answers_json, details_json,
+           correct_count, total_count
+
+  selected_answers_json: { questionId: { sentenceNumber: word } }
+  details_json: list of per-sentence results (for result details view).
+--------------------------------------------------------------------------------
+
+MIGRATIONS (handled automatically in both database.py and api.py):
+  - exams.category
+  - results.is_archived
+  - results.exam_title_snapshot
+  - students.color
+  - attendance table
+  - class_schedule rebuilt with student_id
+  - class_groups dropped
+  - exams.exam_type (default 'mcq')
+  - word_bank_questions table
+  - word_bank_answers table
+
+All migrations are additive and SAFE. No existing data is ever dropped
+without explicit request.
+
+================================================================================
+6. TEACHER WORKFLOW (inside Mini App)
+================================================================================
+
+1. Teacher opens Mini App in Telegram.
+2. Flask authenticates via Telegram initData.
+3. If teacher: Dashboard is shown with all sections:
+   - Create (Add Student, Add Group, Create Exam, Send Exam)
+   - Management (Students, Exams, Results)
+   - Schedule (My Schedule)
+
+CREATE EXAM:
+  - Teacher taps "Create Exam".
+  - Chooses type: MCQ (4 Options) or Word Bank.
+  - For MCQ: paste an array of MCQ JSON.
+  - For Word Bank: paste a single object with:
+      instruction, word_bank, questions, extra_word
+  - Backend validates Word Bank (flexible: word_bank = questions + 1).
+  - Exam is stored with exam_type = 'mcq' or 'word_bank'.
+
+PREVIEW:
+  - Teacher taps the 👁 button next to any exam.
+  - MCQ: full preview with Previous/Next and Finish Preview.
+  - Word Bank: full drag-and-drop preview with Finish Preview.
+  - Preview does NOT save results.
+
+SEND EXAM:
+  - Teacher taps "Send Exam".
+  - Searches / filters exams.
+  - Assigns to one or more groups.
+  - Sends the exam announcement to the group with a Start Exam button.
+  - Deep link format: https://t.me/YEnglsihExamsbot?startapp=exam_<ID>
+
+================================================================================
+7. STUDENT WORKFLOW (inside Mini App)
+================================================================================
+
+1. Student taps the Start Exam button in the Telegram group.
+2. Telegram opens the Mini App with start_param = "exam_<ID>".
+3. Flask authenticates via Telegram initData.
+4. Flask finds the registered student by telegram_user_id.
+5. Flask checks that the exam is assigned to the student's group.
+6. Flask checks that the student has not already taken this exam.
+7. Flask returns questions (WITHOUT answers).
+8. Student answers.
+9. Timer runs in the browser; last 60 seconds shows red warning.
+10. When time runs out: auto-submit with whatever answers exist.
+11. Flask grades on the server.
+12. Result is stored in the database.
+13. Teacher receives a private Telegram notification.
+14. Student sees the result immediately.
+
+================================================================================
+8. SECURITY MODEL (MUST BE PRESERVED)
+================================================================================
+
+1. Never trust student_id from browser input.
+   The server ALWAYS derives the student from validated Telegram initData.
+
+2. Never send correct_answer to the Mini App for MCQ.
+
+3. Never send "answer" or "extra_word" to the Mini App for Word Bank.
+   The server strips them before sending (build_word_bank_student_data).
+
+4. Never grade on the client. All grading is server-side.
+
+5. Always check exam access on the server (group-based).
+
+6. Keep secrets outside source code:
+   TELEGRAM_BOT_TOKEN and TEACHER_TELEGRAM_ID are set as environment
+   variables in the WSGI file on PythonAnywhere, and must NEVER be
+   placed in index.html, JavaScript, or any client-side file.
+
+7. Save and commit the result BEFORE attempting teacher notification.
+   A Telegram notification failure must not erase a valid result.
+
+================================================================================
+9. HOW TO UPDATE AND DEPLOY (CRITICAL - DO NOT CHANGE THIS WORKFLOW)
+================================================================================
+
+This section describes the ONLY correct workflow. The project owner is
+NOT a programmer and does NOT use the terminal for code editing.
+All code changes MUST be made in Windows, then pushed to GitHub, then
+pulled on PythonAnywhere.
+
++-----------------------------------------------------------------------------+
+|  WORKFLOW (DO NOT CHANGE)                                                   |
++-----------------------------------------------------------------------------+
+|                                                                             |
+|  1. Windows: edit the file(s) in:                                           |
+|       C:\Users\Yasser Mousavi\Desktop\YEnglishExams                         |
+|                                                                             |
+|  2. Open PowerShell and run:                                                |
+|       cd "C:\Users\Yasser Mousavi\Desktop\YEnglishExams"                    |
+|       git add <files>                                                       |
+|       git commit -m "message"                                               |
+|       git push origin main                                                  |
+|                                                                             |
+|  3. Open PythonAnywhere Bash console and run:                               |
+|       cd /home/YEnglishExams/YEnglishExams && git pull origin main          |
+|                                                                             |
+|  4. On PythonAnywhere dashboard:                                            |
+|       Web tab -> Click "Reload"                                             |
+|                                                                             |
+|  5. Test in Telegram.                                                       |
+|                                                                             |
++-----------------------------------------------------------------------------+
+
+IMPORTANT RULES ABOUT THIS WORKFLOW:
+
+  - ALL code edits MUST be made in Windows first.
+  - NEVER edit code directly on PythonAnywhere using bash editors.
+  - NEVER push from PythonAnywhere.
+  - NEVER use "git reset --hard" on PythonAnywhere (it may revert exam.db).
+  - The exam.db on PythonAnywhere is the source of truth for real data.
+  - The exam.db is in .gitignore and is NEVER pushed to GitHub.
+
+Python executable (Windows):
+  C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe
+
+Example full commands (Windows):
+
+  cd "C:\Users\Yasser Mousavi\Desktop\YEnglishExams"
+  git status
+  git add api.py
+  git commit -m "Describe what changed"
+  git push origin main
+
+Example full commands (PythonAnywhere):
+
+  cd /home/YEnglishExams/YEnglishExams && git pull origin main
+  # Then click "Reload" in the Web tab of the PythonAnywhere dashboard.
+
+Syntax check before push (Windows):
+  C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe -c "import ast; ast.parse(open('api.py', encoding='utf-8').read()); print('OK')"
+
+Verify data after any migration (PythonAnywhere):
+  cd /home/YEnglishExams/YEnglishExams && sqlite3 exam.db "SELECT 'students=' || COUNT(*) FROM students UNION ALL SELECT 'questions=' || COUNT(*) FROM questions UNION ALL SELECT 'results=' || COUNT(*) FROM results;"
+
+================================================================================
+10. COMMANDS AFTER EACH CHANGE
+================================================================================
+
+After EVERY code change, run the following commands in exactly this order:
+
+--- WINDOWS POWERSHELL ---
+
+  cd "C:\Users\Yasser Mousavi\Desktop\YEnglishExams"
+
+  # Optional but recommended: check syntax
+  C:\PortableApps\WPy64-313150\WPy64-313150\python\python.exe -c "import ast; ast.parse(open('api.py', encoding='utf-8').read()); print('OK')"
+
+  git status
+  git add <changed files>
+  git commit -m "Short descriptive message"
+  git push origin main
+
+--- PYTHONANYWHERE BASH ---
+
+  cd /home/YEnglishExams/YEnglishExams && git pull origin main
+
+--- PYTHONANYWHERE DASHBOARD ---
+
+  Web tab -> Click "Reload"
+
+--- TELEGRAM ---
+
+  Test the change.
+
+================================================================================
+11. IMPORTANT WARNINGS
+================================================================================
+
+1. exam.db MUST never be replaced with an empty database.
+   It contains all real student data.
+   A backup is always taken before migrations or risky changes.
+
+2. The bot token is a credential. It must NEVER be placed in:
+   - index.html
+   - JavaScript files
+   - Public GitHub repositories
+   - Screenshots
+   - Any client-side file
+
+3. button_test_bot.py contains an old, publicly-exposed bot token.
+   This file is legacy and should not be used. Do NOT put its token
+   into any other file. If the token has been leaked, regenerate it
+   via @BotFather.
+
+4. Never grade on the client. Always trust only server-side data.
+
+5. Never send correct answers or extra_word to the Mini App.
+
+6. Never break the existing MCQ pipeline while adding features.
+
+7. Always prefer complete replacement files over partial edits when
+   the project owner is doing the editing manually.
+
+8. Give exact Windows PowerShell commands and PythonAnywhere bash commands.
+
+9. Explain each change BEFORE writing the code, so the owner can
+   understand what is happening.
+
+10. Do NOT add features that were not explicitly requested.
+
+================================================================================
+12. CURRENT STATE (as of this document)
+================================================================================
+
+Working features:
+  - MCQ exams (create, preview, send, grade, results).
+  - Word Bank exams (create, preview, send, grade, results) with
+    drag-and-drop and Finish Preview.
+  - Student schedule (Today + Full Week, sticky Word Bank).
+  - Attendance tracking per student.
+  - Teacher notifications on Telegram.
+  - Auto-submit on timeout with timer warning.
+  - Share features for results and student schedules.
+  - Word Bank supports any number of sentences
+    (word_bank = questions + 1).
+
+Known limitations (intentional, for MVP):
+  - No combined MCQ + Word Bank single exam (two separate exams only).
+  - No image/audio storage.
+  - No full duplicate submission control beyond "already taken".
+  - No server-side exam timer (timer is client-side only).
+  - No full graphical analytics.
+
+Future roadmap (only if the teacher requests):
+  - Combined MCQ + Word Bank in one exam.
+  - Image / audio in questions (via Telegram File Storage).
+  - Server-side attempt timing.
+  - Advanced analytics.
+
+================================================================================
+13. NEXT AI DEVELOPER - QUICK START
+================================================================================
+
+When you (the next AI) receive this document:
+
+  1. Read it completely.
+  2. Ask the owner which feature they want to work on next.
+  3. Before writing any code, READ the current version of the files
+     you will modify (api.py, database.py, index.html, style.css).
+  4. Propose a short plan and get confirmation.
+  5. Write the code in a complete replacement format when possible.
+  6. Give exact PowerShell commands (Windows) and bash commands
+     (PythonAnywhere) in the correct order.
+  7. Warn about any risk to existing data.
+  8. Never touch exam.db directly on the server.
+
+================================================================================
+END OF HANDOVER DOCUMENT v2.0
+================================================================================
