@@ -971,6 +971,15 @@
         // EXAMS
         // ============================================================
 
+                // ============================================================
+        // EXAMS — Toggle categories + Search by title
+        // ============================================================
+
+        let examsData = [];
+        let openExamCategories = {};
+        let examSearchTerm = '';
+        let examSearchVisible = false;
+
         async function loadExams() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading exams...</p></div>`;
             try {
@@ -979,51 +988,157 @@
                     showError(data.message || 'Failed to load exams.');
                     return;
                 }
-                const grouped = {};
-                data.exams.forEach(e => {
-                    const cat = e.category || 'Uncategorized';
-                    if (!grouped[cat]) grouped[cat] = [];
-                    grouped[cat].push(e);
-                });
-
-                let html = `
-                    <div style="padding: 20px;">
-                        ${academicHeader('Exams (' + data.total + ')', 'renderDashboard(USER_DATA)')}
-                `;
-                if (data.exams.length === 0) {
-                    html += `<p style="color: #9ca3af;">No exams created yet.</p>`;
-                } else {
-                    Object.keys(grouped).forEach(cat => {
-                        html += `
-                            <div style="margin-bottom: 20px;">
-                                <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #374151;">${cat}</h3>
-                        `;
-                        grouped[cat].forEach(e => {
-                            const typeLabel = e.exam_type === 'word_bank' ? '📝 Word Bank' : 'MCQ';
-                            html += `
-                                <div class="academic-card">
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <div>
-                                            <strong style="color: #f9fafb;">${e.title}</strong>
-                                            <span style="color: #9ca3af; font-size: 13px; display: block;">ID: ${e.id} | ${typeLabel} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                        </div>
-                                        <div>
-                                            <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
-                                            <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
-                                            <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        html += `</div>`;
-                    });
-                }
-                html += `</div>`;
-                document.querySelector('.exam-card').innerHTML = html;
+                examsData = data.exams || [];
+                openExamCategories = {};   // Reset to all-closed on fresh load
+                examSearchTerm = '';
+                examSearchVisible = false;
+                renderExamsPage();
             } catch (error) {
                 showError('Error loading exams.');
             }
+        }
+
+        function renderExamsPage() {
+            const searchTerm = examSearchTerm.toLowerCase().trim();
+
+            // Filter by title when searching
+            let filtered = examsData;
+            if (searchTerm) {
+                filtered = examsData.filter(e => (e.title || '').toLowerCase().includes(searchTerm));
+            }
+
+            // Group by category
+            const grouped = {};
+            filtered.forEach(e => {
+                const cat = e.category || 'Uncategorized';
+                if (!grouped[cat]) grouped[cat] = [];
+                grouped[cat].push(e);
+            });
+
+            const categories = Object.keys(grouped).sort();
+
+            // When searching, force all matched categories open
+            const forceOpen = searchTerm.length > 0;
+
+            let html = `
+                <div style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <button class="academic-back-button" style="margin-bottom: 0;" onclick="renderDashboard(USER_DATA)">▸ Back</button>
+                        <button class="exam-search-icon-btn" onclick="toggleExamSearch()" title="Search exams">
+                            ${examSearchVisible ? '✕' : '🔍'}
+                        </button>
+                    </div>
+
+                    <h2 class="academic-page-title">Exams (${examsData.length})</h2>
+
+                    ${examSearchVisible ? `
+                        <input 
+                            type="text" 
+                            id="examSearchInput"
+                            class="academic-input"
+                            placeholder="🔍 Search exams by title..."
+                            value="${escapeHtml(examSearchTerm)}"
+                            oninput="onExamSearchInput(this.value)"
+                            autocomplete="off"
+                            style="margin-bottom: 16px;"
+                        >
+                    ` : ''}
+                </div>
+            `;
+
+            if (examsData.length === 0) {
+                html += `<div style="padding: 0 20px 20px 20px;"><p style="color: #9ca3af;">No exams created yet.</p></div>`;
+                document.querySelector('.exam-card').innerHTML = html;
+                return;
+            }
+
+            if (filtered.length === 0) {
+                html += `<div style="padding: 0 20px 20px 20px;"><p style="color: #fbbf24; text-align: center;">No exams match your search.</p></div>`;
+                document.querySelector('.exam-card').innerHTML = html;
+                if (examSearchVisible) {
+                    const input = document.getElementById('examSearchInput');
+                    if (input) input.focus();
+                }
+                return;
+            }
+
+            // Render categories
+            html += `<div style="padding: 0 20px 20px 20px;">`;
+            categories.forEach(cat => {
+                const catId = 'ecat_' + cat.replace(/[^a-zA-Z0-9]/g, '_');
+                const isOpen = forceOpen || (openExamCategories[cat] === true);
+                const examCount = grouped[cat].length;
+
+                html += `
+                    <div style="margin-bottom: 10px;">
+                        <div 
+                            onclick="toggleExamCategory('${escapeHtml(cat)}')"
+                            class="exam-category-header"
+                        >
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span class="exam-category-arrow ${isOpen ? 'open' : ''}">▸</span>
+                                <strong style="color: #60a5fa; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">${escapeHtml(cat)}</strong>
+                                <span style="color: #6b7280; font-size: 12px;">(${examCount})</span>
+                            </div>
+                        </div>
+                        <div id="${catId}" style="display: ${isOpen ? 'block' : 'none'}; margin-top: 6px; padding-left: 6px;">
+                `;
+
+                grouped[cat].forEach(e => {
+                    const typeLabel = e.exam_type === 'word_bank' ? '📝 Word Bank' : 'MCQ';
+                    html += `
+                        <div class="academic-card" style="margin-bottom: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="flex: 1; min-width: 0;">
+                                    <strong style="color: #f9fafb; display: block; font-size: 14px;">${escapeHtml(e.title)}</strong>
+                                    <span style="color: #9ca3af; font-size: 12px; display: block;">ID: ${e.id} | ${typeLabel} | Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
+                                </div>
+                                <div style="flex-shrink: 0; display: flex; gap: 2px;">
+                                    <button class="academic-icon-btn primary" onclick="previewExam(${e.id})" title="Preview">👁</button>
+                                    <button class="academic-icon-btn warning" onclick="showEditExam(${e.id})" title="Edit">✏️</button>
+                                    <button class="academic-icon-btn danger" onclick="deleteExam(${e.id})" title="Delete">✕</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+
+            document.querySelector('.exam-card').innerHTML = html;
+
+            // Focus the search input if visible
+            if (examSearchVisible) {
+                const input = document.getElementById('examSearchInput');
+                if (input) {
+                    input.focus();
+                    const len = input.value.length;
+                    input.setSelectionRange(len, len);
+                }
+            }
+        }
+
+        function toggleExamSearch() {
+            examSearchVisible = !examSearchVisible;
+            if (!examSearchVisible) {
+                examSearchTerm = '';
+            }
+            renderExamsPage();
+        }
+
+        function onExamSearchInput(value) {
+            examSearchTerm = value;
+            renderExamsPage();
+        }
+
+        function toggleExamCategory(cat) {
+            openExamCategories[cat] = !openExamCategories[cat];
+            renderExamsPage();
         }
 
         async function previewExam(examId) {
