@@ -1700,8 +1700,16 @@
         // ============================================================
         // SEND EXAM
         // ============================================================
+                // Toggle state for the Assigned Exams section (default closed)
+        window.assignedExamsOpen = false;
+
+        function toggleAssignedExams() {
+            window.assignedExamsOpen = !window.assignedExamsOpen;
+            renderSendExamList();
+        }
 
         async function showSendExam() {
+            window.assignedExamsOpen = false;
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading...</p></div>`;
             try {
                 const [examsData, assignmentsData, groupsData, studentsData] = await Promise.all([
@@ -1722,6 +1730,7 @@
                 renderSendExamList();
             } catch (error) { showError('Error loading data.'); }
         }
+
 
                 function renderSendExamList() {
             const oldInput = document.getElementById('examSearchInput');
@@ -1856,8 +1865,17 @@
                     <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
                     <h2 class="academic-page-title">Send Exam</h2>
 
-                    <h3 style="color: #34d399; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">📋 Assigned Exams (${assignedExams.length})</h3>
-                    <div style="margin-bottom: 24px;">
+                                        <div 
+                        onclick="toggleAssignedExams()"
+                        class="exam-category-header"
+                        style="margin-bottom: 12px;"
+                    >
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="assignedArrow" class="exam-category-arrow ${window.assignedExamsOpen ? 'open' : ''}">▸</span>
+                            <strong style="color: #34d399; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">📋 Assigned Exams (${assignedExams.length})</strong>
+                        </div>
+                    </div>
+                    <div id="assignedExamsContainer" style="display: ${window.assignedExamsOpen ? 'block' : 'none'}; margin-bottom: 24px;">
                         ${assignedHtml}
                     </div>
 
