@@ -1479,7 +1479,6 @@ def teacher_assign_exam():
     finally:
         connection.close()
 
-
 @app.route("/api/teacher/unassign_exam", methods=["POST"])
 def teacher_unassign_exam():
     auth_result = get_authenticated_user()
@@ -1492,19 +1491,33 @@ def teacher_unassign_exam():
     if not data:
         return jsonify({"status": "error", "message": "Invalid request."}), 400
     exam_id = data.get("exam_id")
+    group_id = data.get("group_id")  # optional: if provided, remove only this pair
+
     if not exam_id:
         return jsonify({"status": "error", "message": "exam_id required."}), 400
+
     connection = get_database_connection()
     cursor = connection.cursor()
     try:
-        cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
+        if group_id is not None:
+            # Remove only this exam-group pair
+            cursor.execute(
+                "DELETE FROM exam_assignments WHERE exam_id = ? AND group_id = ?",
+                (exam_id, group_id)
+            )
+            message = "Exam unassigned from this group. Results are preserved."
+        else:
+            # Remove all assignments for this exam
+            cursor.execute("DELETE FROM exam_assignments WHERE exam_id = ?", (exam_id,))
+            message = "Exam unassigned from all groups. Results are preserved."
         connection.commit()
-        return jsonify({"status": "success", "message": "Exam unassigned successfully. Results are preserved."})
+        return jsonify({"status": "success", "message": message})
     except Exception as error:
         connection.rollback()
         return jsonify({"status": "error", "message": str(error)}), 500
     finally:
         connection.close()
+
 
 
 @app.route("/api/teacher/send_exam_by_exam_id", methods=["POST"])

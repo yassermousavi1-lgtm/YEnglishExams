@@ -1723,7 +1723,7 @@
             } catch (error) { showError('Error loading data.'); }
         }
 
-        function renderSendExamList() {
+                function renderSendExamList() {
             const oldInput = document.getElementById('examSearchInput');
             const searchTerm = (oldInput?.value || '').toLowerCase();
             const cursorPos = oldInput?.selectionStart || 0;
@@ -1732,7 +1732,10 @@
             const categoryFilter = window.selectedCategory || 'all';
 
             const assignedMap = {};
-            window.allAssignments.forEach(a => { assignedMap[a.exam_id] = a; });
+            window.allAssignments.forEach(a => { 
+                if (!assignedMap[a.exam_id]) assignedMap[a.exam_id] = [];
+                assignedMap[a.exam_id].push(a);
+            });
 
             let filteredExams = window.allExams.filter(e => {
                 const matchesSearch = e.title.toLowerCase().includes(searchTerm);
@@ -1800,10 +1803,65 @@
                 });
             }
 
+            // ============================================================
+            // Assigned Exams section (grouped by exam)
+            // ============================================================
+            const assignedExamIds = Object.keys(assignedMap).map(id => parseInt(id));
+            const assignedExams = window.allExams.filter(e => assignedExamIds.includes(e.id));
+
+            let assignedHtml = '';
+            if (assignedExams.length === 0) {
+                assignedHtml = `<p style="color: #6b7280; text-align: center; padding: 12px; font-size: 13px;">No exams are currently assigned.</p>`;
+            } else {
+                assignedExams.forEach(e => {
+                    const assigns = assignedMap[e.id] || [];
+                    const typeIcon = e.exam_type === 'word_bank' ? '📝' : '';
+                    
+                    assignedHtml += `
+                        <div class="academic-card" style="margin-bottom: 10px; border-left: 4px solid #34d399;">
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #f9fafb; display: block; font-size: 14px;">${typeIcon ? typeIcon + ' ' : ''}${escapeHtml(e.title)}</strong>
+                                <span style="color: #9ca3af; font-size: 11px;">Assigned to ${assigns.length} group${assigns.length > 1 ? 's' : ''}</span>
+                            </div>
+                    `;
+                    
+                    assigns.forEach(a => {
+                        assignedHtml += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #0f172a; border-radius: 6px; margin-bottom: 5px;">
+                                <div style="flex: 1; min-width: 0;">
+                                    <span style="color: #60a5fa; font-size: 13px; font-weight: 600; display: block;">📌 ${escapeHtml(a.group_name)}</span>
+                                    <span style="color: #6b7280; font-size: 11px;">Group ID: ${a.group_id}</span>
+                                </div>
+                                <button 
+                                    class="academic-primary-btn small"
+                                    style="background: #7f1d1d; padding: 6px 10px; font-size: 11px;"
+                                    onclick="unassignExamFromGroup(${e.id}, ${a.group_id})"
+                                    title="Unassign from this group"
+                                >
+                                    Unassign
+                                </button>
+                            </div>
+                        `;
+                    });
+                    
+                    assignedHtml += `</div>`;
+                });
+            }
+
+            // ============================================================
+            // Main HTML
+            // ============================================================
             let html = `
                 <div style="padding: 20px;">
                     <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
                     <h2 class="academic-page-title">Send Exam</h2>
+
+                    <h3 style="color: #34d399; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">📋 Assigned Exams (${assignedExams.length})</h3>
+                    <div style="margin-bottom: 24px;">
+                        ${assignedHtml}
+                    </div>
+
+                    <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">📤 Send or Assign New</h3>
                     
                     <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
                         <input 
@@ -1838,10 +1896,10 @@
                             <div class="academic-card" style="border-color: #34d399; margin-bottom: 8px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; min-width: 0;">
-                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${se.exam.title}</strong>
+                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${escapeHtml(se.exam.title)}</strong>
                                         <span style="color: #9ca3af; font-size: 12px; display: block;">Questions: ${se.exam.question_count || 0} | Time: ${se.exam.time_limit} min</span>
-                                        <span style="color: #34d399; font-size: 12px; display: block;">👤 ${se.student.first_name} ${se.student.last_name || ''}</span>
-                                        <span style="color: #60a5fa; font-size: 11px;">📌 ${se.assignment.group_name} (ID: ${se.assignment.group_id})</span>
+                                        <span style="color: #34d399; font-size: 12px; display: block;">👤 ${escapeHtml(se.student.first_name)} ${escapeHtml(se.student.last_name || '')}</span>
+                                        <span style="color: #60a5fa; font-size: 11px;">📌 ${escapeHtml(se.assignment.group_name)} (ID: ${se.assignment.group_id})</span>
                                     </div>
                                     <div style="flex-shrink: 0; display: flex; gap: 4px;">
                                         <button class="academic-icon-btn primary" onclick="sendExamByExamId(${se.exam.id})" title="Send">📤</button>
@@ -1877,7 +1935,7 @@
                             >
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <span id="arrow_${catId}" style="color: #60a5fa; font-size: 16px; transition: transform 0.2s; display: inline-block; ${isOpen ? 'transform: rotate(90deg);' : ''}">▸</span>
-                                    <strong style="color: #60a5fa; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">${cat}</strong>
+                                    <strong style="color: #60a5fa; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">${escapeHtml(cat)}</strong>
                                     <span style="color: #6b7280; font-size: 12px;">(${examCount})</span>
                                 </div>
                             </div>
@@ -1885,21 +1943,21 @@
                     `;
                     
                     grouped[cat].forEach(e => {
-                        const assigned = assignedMap[e.id];
-                        const isAssigned = !!assigned;
+                        const assigns = assignedMap[e.id] || [];
+                        const isAssigned = assigns.length > 0;
                         const typeIcon = e.exam_type === 'word_bank' ? '📝' : '';
                         html += `
                             <div class="academic-card" style="margin-bottom: 6px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; min-width: 0;">
-                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${typeIcon ? typeIcon + ' ' : ''}${e.title}</strong>
+                                        <strong style="color: #f9fafb; display: block; font-size: 14px;">${typeIcon ? typeIcon + ' ' : ''}${escapeHtml(e.title)}</strong>
                                         <span style="color: #9ca3af; font-size: 12px; display: block;">Questions: ${e.question_count || 0} | Time: ${e.time_limit} min</span>
-                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 11px;">📌 ${assigned.group_name} (ID: ${assigned.group_id})</span>` : `<span style="color: #fbbf24; font-size: 11px;">⚠️ Not assigned</span>`}
+                                        ${isAssigned ? `<span style="color: #60a5fa; font-size: 11px;">📌 ${assigns.length} group${assigns.length > 1 ? 's' : ''}</span>` : `<span style="color: #fbbf24; font-size: 11px;">⚠️ Not assigned</span>`}
                                     </div>
                                     <div style="flex-shrink: 0; display: flex; gap: 4px;">
                                         ${isAssigned ? 
                                             `<button class="academic-icon-btn primary" onclick="sendExamByExamId(${e.id})" title="Send">📤</button>
-                                             <button class="academic-icon-btn danger" onclick="unassignExam(${e.id})" title="Unassign">🔓</button>` :
+                                             <button class="academic-icon-btn danger" onclick="unassignExam(${e.id})" title="Unassign all">🔓</button>` :
                                             `<button class="academic-primary-btn small" onclick="showAssignForm(${e.id})">Assign</button>`
                                         }
                                     </div>
@@ -1924,6 +1982,26 @@
                     newInput.focus();
                     newInput.setSelectionRange(cursorPos, cursorPos);
                 }
+            }
+        }
+
+        async function unassignExamFromGroup(examId, groupId) {
+            if (!confirm(`Unassign this exam from this group?`)) return;
+            try {
+                const response = await fetch('/api/teacher/unassign_exam', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({ exam_id: examId, group_id: groupId })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Unassigned from group.');
+                    showSendExam();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed.'));
+                }
+            } catch (error) {
+                alert('❌ Error.');
             }
         }
 
