@@ -136,6 +136,25 @@ def get_database_connection():
     except sqlite3.OperationalError:
         pass
 
+    # makeup_sessions table
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS makeup_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                session_date TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT NOT NULL,
+                title TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
     # drop legacy class_groups
     try:
         cursor.execute("DROP TABLE IF EXISTS class_groups")

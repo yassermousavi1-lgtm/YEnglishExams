@@ -499,6 +499,27 @@ def create_database():
     """)
 
     # --------------------------------------------------------
+    # MAKEUP SESSIONS
+    #
+    # One-off extra sessions for a specific date (not weekly).
+    # These are separate from the weekly class_schedule.
+    # --------------------------------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS makeup_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            session_date TEXT NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            title TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id)
+                REFERENCES students(id)
+                ON DELETE CASCADE
+        )
+    """)
+    # --------------------------------------------------------
     # WORD BANK QUESTIONS
     #
     # One row = one complete Word Bank set (10 sentences).
