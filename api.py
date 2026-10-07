@@ -2024,6 +2024,169 @@ def teacher_get_schedule():
         connection.close()
 
 
+# ============================================================
+# MAKEUP SESSIONS ENDPOINTS
+# ============================================================
+#
+# Make-up sessions are one-off extra sessions for a specific
+# date (not weekly). They are separate from class_schedule
+# (which is weekly recurring).
+# ============================================================
+
+@app.route("/api/teacher/makeup_sessions", methods=["GET"])
+def teacher_get_makeup_sessions():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT
+                ms.id,
+                ms.student_id,
+                ms.session_date,
+                ms.start_time,
+                ms.end_time,
+                ms.title,
+                ms.notes,
+                ms.created_at,
+                s.first_name,
+                s.last_name,
+                s.color AS student_color
+            FROM makeup_sessions ms
+            JOIN students s ON s.id = ms.student_id
+            ORDER BY ms.session_date ASC, ms.start_time ASC
+        """)
+        rows = cursor.fetchall()
+        result = []
+        for r in rows:
+            full_name = f"{r['first_name'] or ''} {r['last_name'] or ''}".strip()
+            result.append({
+                "id": r["id"],
+                "student_id": r["student_id"],
+                "student_name": full_name,
+                "student_color": r["student_color"] or "#2563eb",
+                "session_date": r["session_date"],
+                "start_time": r["start_time"],
+                "end_time": r["end_time"],
+                "title": r["title"],
+                "notes": r["notes"],
+                "created_at": r["created_at"]
+            })
+        return jsonify({"status": "success", "makeup_sessions": result, "total": len(result)})
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/makeup_sessions", methods=["POST"])
+def teacher_add_makeup_session():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+
+    student_id = data.get("student_id")
+    session_date = (data.get("session_date") or "").strip()
+    start_time = (data.get("start_time") or "").strip()
+    end_time = (data.get("end_time") or "").strip()
+    title = (data.get("title") or "").strip()
+    notes = (data.get("notes") or "").strip()
+
+    if not student_id or not session_date or not start_time or not end_time:
+        return jsonify({"status": "error", "message": "student_id, session_date, start_time, and end_time are required."}), 400
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("SELECT id FROM students WHERE id = ?", (student_id,))
+        if not cursor.fetchone():
+            return jsonify({"status": "error", "message": "Student not found."}), 404
+        cursor.execute("""
+            INSERT INTO makeup_sessions (student_id, session_date, start_time, end_time, title, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (student_id, session_date, start_time, end_time, title, notes))
+        connection.commit()
+        return jsonify({"status": "success", "message": "Make-up session added.", "id": cursor.lastrowid})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/makeup_sessions/<int:makeup_id>", methods=["PUT"])
+def teacher_update_makeup_session(makeup_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"status": "error", "message": "Invalid request."}), 400
+
+    student_id = data.get("student_id")
+    session_date = (data.get("session_date") or "").strip()
+    start_time = (data.get("start_time") or "").strip()
+    end_time = (data.get("end_time") or "").strip()
+    title = (data.get("title") or "").strip()
+    notes = (data.get("notes") or "").strip()
+
+    if not student_id or not session_date or not start_time or not end_time:
+        return jsonify({"status": "error", "message": "All required fields must be filled."}), 400
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            UPDATE makeup_sessions
+            SET student_id = ?, session_date = ?, start_time = ?, end_time = ?, title = ?, notes = ?
+            WHERE id = ?
+        """, (student_id, session_date, start_time, end_time, title, notes, makeup_id))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Make-up session not found."}), 404
+        return jsonify({"status": "success", "message": "Make-up session updated."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/makeup_sessions/<int:makeup_id>", methods=["DELETE"])
+def teacher_delete_makeup_session(makeup_id):
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("DELETE FROM makeup_sessions WHERE id = ?", (makeup_id,))
+        connection.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"status": "error", "message": "Make-up session not found."}), 404
+        return jsonify({"status": "success", "message": "Make-up session deleted."})
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
+
 @app.route("/api/teacher/schedule", methods=["POST"])
 def teacher_add_schedule():
     auth_result = get_authenticated_user()
