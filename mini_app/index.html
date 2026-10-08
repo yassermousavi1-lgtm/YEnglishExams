@@ -1563,7 +1563,7 @@
             isPreviewMode = true;
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading preview...</p></div>`;
             try {
-                const response = await fetch(`/api/teacher/preview_exam/${examId}`, {
+                const response = await fetch(`/api/teacher/preview_exam/${examId}/with_answers`, {
                     method: 'GET',
                     headers: { 'X-Telegram-Init-Data': telegram?.initData || '' }
                 });
@@ -2850,15 +2850,84 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
-        function finishWordBankPreview() {
-            // In preview mode, count how many sentences have a word placed.
+                function finishWordBankPreview() {
             const wb = wordBankQuestions[currentWordBankIndex];
             if (!wb) { exitPreview(); return; }
 
             const wbId = String(wb.id);
             const placed = wordBankAnswers[wbId] || {};
-            const answered = Object.keys(placed).length;
             const total = wb.questions.length;
+
+            // Build a lookup for correct answers from the answer key
+            const answerKey = wb.answer_key || {};
+            const correctMap = {};  // { "1": "improve", "2": "prevent", ... }
+            (answerKey.answers || []).forEach(a => {
+                correctMap[String(a.number)] = String(a.answer || '').trim().toLowerCase();
+            });
+
+            // Compare each question
+            let correctCount = 0;
+            let wrongCount = 0;
+            let emptyCount = 0;
+            const details = [];  // for per-sentence breakdown
+
+            wb.questions.forEach(q => {
+                const num = String(q.number);
+                const submitted = placed[num];
+                const correct = correctMap[num] || '';
+
+                let status;
+                if (!submitted) {
+                    emptyCount++;
+                    status = 'empty';
+                } else if (submitted.trim().toLowerCase() === correct) {
+                    correctCount++;
+                    status = 'correct';
+                } else {
+                    wrongCount++;
+                    status = 'wrong';
+                }
+                details.push({
+                    number: q.number,
+                    sentence: q.sentence,
+                    submitted: submitted || null,
+                    correct: correct,
+                    status: status
+                });
+            });
+
+            const percentage = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+
+            // Build the per-sentence breakdown list
+            let detailsHtml = '';
+            details.forEach(d => {
+                let bg = 'transparent';
+                let marker = '';
+                let submittedText = '';
+                if (d.status === 'correct') {
+                    bg = 'rgba(52, 211, 153, 0.1)';
+                    marker = '✅';
+                    submittedText = `<span style="color: #34d399;">${escapeHtml(d.submitted)}</span>`;
+                } else if (d.status === 'wrong') {
+                    bg = 'rgba(239, 68, 68, 0.1)';
+                    marker = '❌';
+                    submittedText = `<span style="color: #fca5a5;">${escapeHtml(d.submitted)}</span> <span style="color: #6b7280;">(correct: ${escapeHtml(d.correct)})</span>`;
+                } else {
+                    bg = 'rgba(107, 114, 128, 0.1)';
+                    marker = '⬜';
+                    submittedText = `<span style="color: #6b7280;">(empty) — correct: ${escapeHtml(d.correct)}</span>`;
+                }
+
+                detailsHtml += `
+                    <div style="background: ${bg}; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; display: flex; gap: 8px; align-items: flex-start;">
+                        <span style="font-size: 14px;">${marker}</span>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="color: #9ca3af; font-size: 12px; margin-bottom: 2px;">${d.number}. ${escapeHtml(d.sentence)}</div>
+                            <div style="font-size: 13px;">${submittedText}</div>
+                        </div>
+                    </div>
+                `;
+            });
 
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 0;">
@@ -2866,12 +2935,41 @@
                         <span>⚠️ Preview Mode - Results will NOT be saved</span>
                         <button class="preview-exit-btn" onclick="exitPreview()">Exit Preview</button>
                     </div>
-                    <div style="padding: 40px 24px; text-align: center;">
-                        <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
-                        <h1 style="color: #60a5fa; font-size: 24px; font-weight: 700; margin: 0 0 16px 0;">Preview Completed!</h1>
-                        <p style="color: #9ca3af; font-size: 14px; margin: 0;">You answered ${answered} out of ${total} sentences.</p>
-                        <p style="color: #6b7280; font-size: 13px; margin: 16px 0;">(No results were saved)</p>
-                        <button class="academic-primary-btn" style="margin-top: 24px;" onclick="exitPreview()">Exit Preview</button>
+                    <div style="padding: 24px 20px;">
+                        <div style="text-align: center; margin-bottom: 24px;">
+                            <div style="font-size: 48px; margin-bottom: 12px;">📊</div>
+                            <h1 style="color: #60a5fa; font-size: 22px; font-weight: 700; margin: 0 0 8px 0;">Preview Results</h1>
+                            <p style="color: #9ca3af; font-size: 13px; margin: 0;">(Not saved — this is only a preview)</p>
+                        </div>
+
+                        <div class="academic-card" style="text-align: center; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-around; gap: 12px;">
+                                <div>
+                                    <div style="color: #34d399; font-size: 28px; font-weight: 800;">${correctCount}</div>
+                                    <div style="color: #9ca3af; font-size: 12px;">Correct</div>
+                                </div>
+                                <div>
+                                    <div style="color: #fca5a5; font-size: 28px; font-weight: 800;">${wrongCount}</div>
+                                    <div style="color: #9ca3af; font-size: 12px;">Wrong</div>
+                                </div>
+                                <div>
+                                    <div style="color: #9ca3af; font-size: 28px; font-weight: 800;">${emptyCount}</div>
+                                    <div style="color: #9ca3af; font-size: 12px;">Empty</div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid #374151;">
+                                <div style="color: #60a5fa; font-size: 32px; font-weight: 800;">${percentage}%</div>
+                                <div style="color: #9ca3af; font-size: 12px;">${correctCount} / ${total} correct</div>
+                            </div>
+                        </div>
+
+                        <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Details</h3>
+
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            ${detailsHtml}
+                        </div>
+
+                        <button class="academic-primary-btn" style="width: 100%; margin-top: 20px;" onclick="exitPreview()">Exit Preview</button>
                     </div>
                 </div>
             `;

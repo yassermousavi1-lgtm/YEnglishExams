@@ -799,6 +799,123 @@ def teacher_preview_exam(exam_id):
         })
     finally:
         connection.close()
+@app.route("/api/teacher/preview_exam/<int:exam_id>/with_answers")
+def teacher_preview_exam_with_answers(exam_id):
+    """
+    Like /api/teacher/preview_exam/<id>, but ALSO returns the correct
+    answers so the teacher can see right/wrong during preview.
+
+    IMPORTANT: This endpoint is teacher-only and must NEVER be exposed
+    to students. Students use the normal /api/exam/<id>/questions.
+
+    For MCQ:
+        Each question gains an extra field: "correct_answer"
+
+    For Word Bank:
+        The response includes answer_key which contains:
+          - answers: list of { number, answer }
+          - extra_word
+    """
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT id, title, time_limit, exam_type FROM exams WHERE id = ?", (exam_id,))
+        exam = cursor.fetchone()
+        if exam is None:
+            return jsonify({"status": "error", "message": "Exam not found."}), 404
+
+        exam_type = exam["exam_type"] or "mcq"
+
+        # ---------------- Word Bank ----------------
+        if exam_type == "word_bank":
+            cursor.execute("""
+                SELECT id, question_order, student_data_json, answer_key_json
+                FROM word_bank_questions
+                WHERE exam_id = ?
+                ORDER BY question_order ASC
+            """, (exam_id,))
+            rows = cursor.fetchall()
+
+            word_bank_questions = []
+            for r in rows:
+                try:
+                    student_payload = json.loads(r["student_data_json"])
+                    answer_payload = json.loads(r["answer_key_json"])
+                except Exception:
+                    continue
+                word_bank_questions.append({
+                    "id": r["id"],
+                    "question_order": r["question_order"],
+                    "instruction": student_payload.get("instruction", ""),
+                    "word_bank": student_payload.get("word_bank", []),
+                    "questions": student_payload.get("questions", []),
+                    # teacher-only:
+                    "answer_key": answer_payload,
+                })
+
+            return jsonify({
+                "status": "success",
+                "exam": {
+                    "id": exam["id"],
+                    "title": exam["title"],
+                    "time_limit": exam["time_limit"],
+                    "exam_type": "word_bank"
+                },
+                "word_bank_questions": word_bank_questions,
+                "total_questions": len(word_bank_questions)
+            })
+
+        # ---------------- MCQ ----------------
+        cursor.execute("""
+            SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
+                   q.correct_answer, eq.question_order
+            FROM exam_questions AS eq
+            INNER JOIN questions AS q ON q.id = eq.question_id
+            WHERE eq.exam_id = ?
+            ORDER BY eq.question_order ASC
+        """, (exam_id,))
+        questions = cursor.fetchall()
+        question_list = []
+        for question in questions:
+            options = {}
+            if question["option_a"]:
+                options["A"] = question["option_a"]
+            if question["option_b"]:
+                options["B"] = question["option_b"]
+            if question["option_c"]:
+                options["C"] = question["option_c"]
+            if question["option_d"]:
+                options["D"] = question["option_d"]
+            question_list.append({
+                "id": question["id"],
+                "question_text": question["question_text"],
+                "options": options,
+                "question_order": question["question_order"],
+                # teacher-only:
+                "correct_answer": (question["correct_answer"] or "").strip().upper(),
+            })
+
+        return jsonify({
+            "status": "success",
+            "exam": {
+                "id": exam["id"],
+                "title": exam["title"],
+                "time_limit": exam["time_limit"],
+                "exam_type": "mcq"
+            },
+            "questions": question_list,
+            "total_questions": len(question_list)
+        })
+    finally:
+        connection.close()
+
 
 
 @app.route("/api/exam/submit", methods=["POST"])
