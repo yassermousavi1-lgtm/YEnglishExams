@@ -2120,19 +2120,22 @@ def _safe_pdf_text(text):
             out.append("?")
     return "".join(out)
 
-
 def _build_schedule_pdf(schedule_rows, makeup_rows):
     """
     Build the weekly schedule PDF and return it as bytes.
 
-    schedule_rows: list of dicts (weekly sessions)
-    makeup_rows:   list of dicts (make-up sessions)
-    """
-    # --- Config ---
-    START_HOUR = 7
-    END_HOUR = 24   # exclusive (last row is 23:00 → 24:00)
+    Layout:
+      - Rows    = hourly slots (07:00 → 24:00)  → 17 rows
+      - Columns = days of the week (Monday → Sunday)
+      - Everything fits on ONE landscape A4 page.
 
-    # --- Helpers ---
+    Weekly sessions and make-up sessions are merged.
+    Make-up sessions are marked with (M).
+    Non-Latin1 characters (emojis) are replaced with '?'.
+    """
+    START_HOUR = 7
+    END_HOUR = 24   # exclusive
+
     def time_to_minutes(t):
         if not t:
             return 0
@@ -2156,7 +2159,7 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
         "Thursday": "THU", "Friday": "FRI", "Saturday": "SAT", "Sunday": "SUN"
     }
 
-    # --- Merge all sessions into a single list ---
+    # --- Merge all sessions into one list ---
     all_sessions = []
     for s in schedule_rows:
         all_sessions.append({
@@ -2183,44 +2186,79 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
             "date": m["session_date"]
         })
 
-    # --- Build PDF ---
-    pdf = FPDF(orientation="L", unit="mm", format="A4")   # Landscape
-    pdf.set_auto_page_break(auto=True, margin=10)
+    # --- Create PDF: landscape A4 ---
+    # A4 landscape: 297 x 210 mm
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=False)   # IMPORTANT: no page breaks
     pdf.add_page()
 
-    # Header
+    # --- Page geometry ---
+    page_w = pdf.w - pdf.l_margin - pdf.r_margin   # ~277 mm
+    page_h = pdf.h - pdf.t_margin - pdf.b_margin   # ~190 mm
+
+    # Header height (title + meta)
+    header_h = 16
+
+    # Footer height (the (M) note)
+    footer_h = 6
+
+    # Table area
+    table_h = page_h - header_h - footer_h
+
+    # Rows: header row + 17 hour rows
+    n_hour_rows = END_HOUR - START_HOUR   # 17
+    header_row_h = 8
+    hour_row_h = (table_h - header_row_h) / n_hour_rows
+
+    # Columns
+    hour_col_w = 20
+    day_col_w = (page_w - hour_col_w) / 7.0
+
+    # --- Header (title + meta) ---
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 8, _safe_pdf_text("Weekly Schedule - YEnglish Exams"), ln=True)
+
     pdf.set_font("Helvetica", "", 10)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    pdf.cell(0, 6,
-             _safe_pdf_text(f"Generated: {generated_at}   |   Weekly sessions: {len(schedule_rows)}   |   Make-up sessions: {len(makeup_rows)}"),
-             ln=True)
+    pdf.cell(
+        0, 6,
+        _safe_pdf_text(
+            f"Generated: {generated_at}   |   Weekly sessions: {len(schedule_rows)}   |   Make-up sessions: {len(makeup_rows)}"
+        ),
+        ln=True
+    )
     pdf.ln(2)
 
-    # --- Draw grid manually ---
-    page_w = pdf.w - pdf.l_margin - pdf.r_margin
-    hour_col_w = 18    # width of time column
-    day_col_w = (page_w - hour_col_w) / 7.0
-    row_h = 9          # base row height
+    # Save the table's top-left position
+    table_x = pdf.get_x()
+    table_y = pdf.get_y()
 
-    # Header row
+    # --- Draw column header row ---
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(220, 220, 220)
-    pdf.cell(hour_col_w, 8, "Time", border=1, align="C", fill=True)
+    pdf.set_xy(table_x, table_y)
+    pdf.cell(hour_col_w, header_row_h, "Time", border=1, align="C", fill=True)
     for d in day_headers:
-        pdf.cell(day_col_w, 8, day_short[d], border=1, align="C", fill=True)
-    pdf.ln(8)
+        pdf.cell(day_col_w, header_row_h, day_short[d], border=1, align="C", fill=True)
+    pdf.ln(header_row_h)
 
-    # Hour rows
-    pdf.set_font("Helvetica", "", 8)
+    # --- Draw hour rows ---
     for h in range(START_HOUR, END_HOUR):
         slot_start = h * 60
         slot_end = (h + 1) * 60
 
-        # Collect cell content for each day first, then draw.
-        cells = []
-        max_lines = 1
+        row_top_x = table_x
+        row_top_y = pdf.get_y()
+
+        # Time cell (two lines: from / to)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(240, 240, 240)
+        pdf.set_xy(row_top_x, row_top_y)
+        time_text = f"{h:02d}:00\n{h+1:02d}:00"
+        pdf.multi_cell(hour_col_w, hour_row_h / 2, time_text,
+                       border=1, align="C", fill=True)
+
+        # For each day, draw its cell
         for day in day_headers:
             matching = [
                 s for s in all_sessions
@@ -2229,66 +2267,86 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
                 and time_to_minutes(s["start_time"]) < slot_end
             ]
             matching.sort(key=lambda x: time_to_minutes(x["start_time"]))
-            lines = []
-            for s in matching:
-                marker = " (M)" if s["kind"] == "makeup" else ""
-                name_line = f"{s['student_name']}{marker}"
-                time_line = f"{s['start_time']}-{s['end_time']}"
-                lines.append(name_line)
-                lines.append(time_line)
-                if s["title"]:
-                    lines.append(s["title"])
-            cells.append(lines)
-            if len(lines) > max_lines:
-                max_lines = len(lines)
 
-        # Row height depends on content
-        this_row_h = max(row_h, 4 + max_lines * 3.5)
+            cell_x = pdf.get_x()
+            cell_y = pdf.get_y()
 
-        # Time column
-        time_label = f"{h:02d}:00\n{h+1:02d}:00" if h < 23 else f"{h:02d}:00\n24:00"
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font("Helvetica", "B", 8)
-        # Multi-cell for two-line time label
-        x0 = pdf.get_x()
-        y0 = pdf.get_y()
-        pdf.multi_cell(hour_col_w, this_row_h / 2, f"{h:02d}:00\n{h+1:02d}:00".replace("24:00", "24:00"),
-                       border=1, align="C", fill=True)
-        pdf.set_xy(x0 + hour_col_w, y0)
+            # Draw the border first
+            pdf.rect(cell_x, cell_y, day_col_w, hour_row_h)
 
-        # Day cells
-        pdf.set_font("Helvetica", "", 7)
-        for day_idx, day in enumerate(day_headers):
-            x = pdf.get_x()
-            y = pdf.get_y()
-            if not cells[day_idx]:
-                pdf.cell(day_col_w, this_row_h, "", border=1)
+            # Inner padding
+            pad_x = 1.0
+            pad_y = 1.0
+            inner_x = cell_x + pad_x
+            inner_y = cell_y + pad_y
+            inner_w = day_col_w - 2 * pad_x
+
+            if not matching:
+                # Empty cell — advance to next column
+                pdf.set_xy(cell_x + day_col_w, cell_y)
+                continue
+
+            # We can fit up to ~3 sessions per cell.
+            # Each session = 2 lines (name+marker, time) [+ optional title]
+            # Adjust font size dynamically based on the number of sessions
+            n = len(matching)
+            if n == 1:
+                name_size = 10
+                line_h = 3.6
+            elif n == 2:
+                name_size = 9
+                line_h = 3.2
             else:
-                # First line: student name (bold)
-                # Remaining lines: time + optional title
-                pdf.set_font("Helvetica", "B", 7)
-                pdf.cell(day_col_w, 3.5, _safe_pdf_text(cells[day_idx][0][:32]), border=0)
-                # Move to next line inside the cell
-                pdf.set_xy(x, y + 3.5)
-                pdf.set_font("Helvetica", "", 6)
-                for extra_line in cells[day_idx][1:]:
-                    pdf.cell(day_col_w, 3, _safe_pdf_text(extra_line[:34]), border=0)
-                    pdf.set_xy(x, pdf.get_y() + 3)
+                name_size = 8
+                line_h = 2.8
 
-                # Draw the cell border around the whole block
-                pdf.rect(x, y, day_col_w, this_row_h)
-                pdf.set_xy(x + day_col_w, y)
-        # End of row
-        pdf.set_xy(pdf.l_margin, y0 + this_row_h)
+            current_y = inner_y
+            max_y = inner_y + hour_row_h - pad_y
 
-    # Footer note
-    pdf.ln(2)
+            for s in matching:
+                if current_y + line_h > max_y:
+                    break  # no more room in this cell
+
+                marker = " (M)" if s["kind"] == "makeup" else ""
+                name_line = _safe_pdf_text(f"{s['student_name']}{marker}")
+                time_line = _safe_pdf_text(f"{s['start_time']}-{s['end_time']}")
+
+                # Name (bold)
+                pdf.set_font("Helvetica", "B", name_size)
+                pdf.set_xy(inner_x, current_y)
+                pdf.cell(inner_w, line_h, name_line, border=0)
+
+                current_y += line_h
+
+                # Time (regular)
+                if current_y + line_h * 0.9 <= max_y:
+                    pdf.set_font("Helvetica", "", name_size - 1)
+                    pdf.set_xy(inner_x, current_y)
+                    pdf.cell(inner_w, line_h * 0.9, time_line, border=0)
+                    current_y += line_h * 0.9
+
+                # Optional title (very small)
+                if s["title"] and current_y + line_h * 0.8 <= max_y:
+                    pdf.set_font("Helvetica", "I", name_size - 2)
+                    pdf.set_xy(inner_x, current_y)
+                    pdf.cell(inner_w, line_h * 0.8, _safe_pdf_text(s["title"]), border=0)
+                    current_y += line_h * 0.8
+
+            # Move to next column
+            pdf.set_xy(cell_x + day_col_w, cell_y)
+
+        # After the 7 day cells, move to the next row
+        pdf.set_xy(table_x, row_top_y + hour_row_h)
+
+    # --- Footer note ---
     pdf.set_font("Helvetica", "I", 8)
-    pdf.cell(0, 5, _safe_pdf_text("(M) = Make-up session. Cells show the session's starting hour."), ln=True)
+    pdf.set_xy(table_x, pdf.get_y() + 1)
+    pdf.cell(0, 5,
+             _safe_pdf_text("(M) = Make-up session. Cells show the session's starting hour."),
+             ln=True)
 
-    # Return as bytes (no disk write)
+    # --- Output as bytes (in memory) ---
     output = pdf.output(dest="S")
-    # fpdf2 returns bytearray in some versions, str in others. Normalize to bytes.
     if isinstance(output, str):
         output = output.encode("latin-1")
     elif isinstance(output, bytearray):
