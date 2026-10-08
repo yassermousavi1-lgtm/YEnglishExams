@@ -257,9 +257,10 @@
         async function showMySchedule() {
             document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading schedule...</p></div>`;
             try {
-                const [scheduleResponse, studentsResponse] = await Promise.all([
+                const [scheduleResponse, studentsResponse, makeupResponse] = await Promise.all([
                     fetchAPI('/api/teacher/schedule'),
-                    fetchAPI('/api/teacher/students')
+                    fetchAPI('/api/teacher/students'),
+                    fetchAPI('/api/teacher/makeup_sessions')
                 ]);
                 if (scheduleResponse.status !== 'success' || studentsResponse.status !== 'success') {
                     showError('Failed to load schedule data.');
@@ -267,6 +268,11 @@
                 }
                 scheduleData = scheduleResponse.schedule || [];
                 allStudents = studentsResponse.students || [];
+                if (makeupResponse.status === 'success') {
+                    makeupSessions = makeupResponse.makeup_sessions || [];
+                } else {
+                    makeupSessions = [];
+                }
                 currentTodayDate = new Date();
                 renderMySchedule();
             } catch (error) {
@@ -295,24 +301,70 @@
             const todayName = getDayNameFromDate(currentTodayDate);
             const todaySessions = getSessionsForDay(todayName);
             const dayLabel = getDayLabel(currentTodayDate);
+            // ----- Build Today Card items (weekly sessions + make-up sessions, sorted by start time) -----
+            const todayDateKey = toDateKey(currentTodayDate);
+            const todayMakeups = getMakeupSessionsForDate(todayDateKey);
+
+            // Build a unified list of items to render, each with a normalized start time.
+            const todayItems = [];
+
+            todaySessions.forEach(s => {
+                todayItems.push({
+                    kind: 'weekly',
+                    start_time: s.start_time,
+                    end_time: s.end_time,
+                    student_name: s.student_name,
+                    student_color: s.student_color,
+                    schedule_id: s.id
+                });
+            });
+
+            todayMakeups.forEach(m => {
+                todayItems.push({
+                    kind: 'makeup',
+                    start_time: m.start_time,
+                    end_time: m.end_time,
+                    student_name: m.student_name,
+                    student_color: m.student_color,
+                    makeup_id: m.id,
+                    title: m.title || ''
+                });
+            });
+
+            todayItems.sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
 
             let todayHtml = '';
-            if (todaySessions.length === 0) {
+            if (todayItems.length === 0) {
                 todayHtml = `<p style="color: #6b7280; text-align: center; padding: 16px; font-size: 14px;">No classes scheduled for this day.</p>`;
             } else {
-                todaySessions.forEach(s => {
-                    todayHtml += `
-                        <div class="schedule-session-row" onclick="showStudentSchedule(${s.id})">
-                            <span class="schedule-color-dot" style="background: ${s.student_color};"></span>
-                            <div class="schedule-session-info">
-                                <strong>${s.student_name}</strong>
-                                <span>${s.start_time} → ${s.end_time}</span>
+                todayItems.forEach(item => {
+                    if (item.kind === 'weekly') {
+                        todayHtml += `
+                            <div class="schedule-session-row" onclick="showStudentSchedule(${item.schedule_id})">
+                                <span class="schedule-color-dot" style="background: ${item.student_color};"></span>
+                                <div class="schedule-session-info">
+                                    <strong>${escapeHtml(item.student_name)}</strong>
+                                    <span>${item.start_time} → ${item.end_time}</span>
+                                </div>
+                                <span class="schedule-session-arrow">▸</span>
                             </div>
-                            <span class="schedule-session-arrow">▸</span>
-                        </div>
-                    `;
+                        `;
+                    } else {
+                        // Make-up session — amber left border + (M) marker
+                        todayHtml += `
+                            <div class="schedule-session-row" onclick="showEditMakeupForm(${item.makeup_id})" style="border-left: 4px solid #f59e0b;">
+                                <span class="schedule-color-dot" style="background: ${item.student_color};"></span>
+                                <div class="schedule-session-info">
+                                    <strong>${escapeHtml(item.student_name)} <span style="color: #fbbf24; font-weight: 700;">(M)</span></strong>
+                                    <span>${item.start_time} → ${item.end_time}${item.title ? ' · ' + escapeHtml(item.title) : ''}</span>
+                                </div>
+                                <span class="schedule-session-arrow" style="color: #f59e0b;">▸</span>
+                            </div>
+                        `;
+                    }
                 });
             }
+           
 
             let weekHtml = '';
             DAYS_OF_WEEK.forEach(day => {
@@ -346,7 +398,10 @@
                     <button class="academic-back-button" onclick="renderDashboard(USER_DATA)">▸ Back</button>
                     <h2 class="academic-page-title">📅 My Schedule</h2>
 
-                    <button class="academic-primary-btn" style="width: 100%; margin-bottom: 20px;" onclick="showAddSessionForm()">➕ Add Session</button>
+                    <div style="display: flex; gap: 8px; margin-bottom: 20px;">
+                        <button class="academic-primary-btn" style="flex: 1;" onclick="showAddSessionForm()">➕ Add Session</button>
+                        <button class="academic-primary-btn" style="flex: 1;" onclick="showAddMakeupForm()">➕ Add Make-up Session</button>
+                    </div>
 
                     <div class="today-card">
                         <div class="today-header">
@@ -361,14 +416,77 @@
                             ${todayHtml}
                         </div>
                     </div>
-
                     <h3 style="color: #60a5fa; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #374151;">Full Week</h3>
                     <div class="week-container">
                         ${weekHtml}
                     </div>
+
+                    ${renderUpcomingMakeupSection()}
                 </div>
             `;
         }
+       
+        // ------------------------------------------------------------
+        // Upcoming Make-up Sessions — collapsible section
+        // ------------------------------------------------------------
+        function renderUpcomingMakeupSection() {
+            const total = makeupSessions.length;
+
+            // Sort by date then start time
+            const sorted = makeupSessions
+                .slice()
+                .sort((a, b) => {
+                    if (a.session_date !== b.session_date) {
+                        return a.session_date.localeCompare(b.session_date);
+                    }
+                    return timeToMinutes(a.start_time) - timeToMinutes(b.start_time);
+                });
+
+            let headerHtml = `
+                <div 
+                    onclick="toggleMakeupSection()"
+                    class="exam-category-header"
+                    style="margin-top: 24px; margin-bottom: 12px;"
+                >
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="exam-category-arrow ${openMakeupSection ? 'open' : ''}">▸</span>
+                        <strong style="color: #fbbf24; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">📌 Upcoming Make-up Sessions (${total})</strong>
+                    </div>
+                </div>
+            `;
+
+            let bodyHtml = '';
+            if (openMakeupSection) {
+                if (total === 0) {
+                    bodyHtml = `<p style="color: #6b7280; text-align: center; padding: 16px; font-size: 13px;">No make-up sessions yet.</p>`;
+                } else {
+                    bodyHtml = `<div style="display: flex; flex-direction: column; gap: 8px;">`;
+                    sorted.forEach(m => {
+                        bodyHtml += `
+                            <div class="academic-card" style="border-left: 4px solid #f59e0b; margin-bottom: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                            <span style="color: #fbbf24; font-weight: 700; font-size: 13px;">${formatMakeupDateShort(m.session_date)}</span>
+                                            <span style="color: #f9fafb; font-size: 13px; font-weight: 600;">${m.start_time} → ${m.end_time}</span>
+                                        </div>
+                                        <span style="color: #e5e7eb; font-size: 13px; display: block;">${escapeHtml(m.student_name)}</span>
+                                        ${m.title ? `<span style="color: #9ca3af; font-size: 12px; display: block; margin-top: 2px;">📝 ${escapeHtml(m.title)}</span>` : ''}
+                                    </div>
+                                    <div style="flex-shrink: 0; display: flex; gap: 2px;">
+                                        <button class="academic-icon-btn primary" onclick="showEditMakeupForm(${m.id})" title="Edit">✏️</button>
+                                        <button class="academic-icon-btn danger" onclick="deleteMakeupSession(${m.id})" title="Delete">🗑️</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    bodyHtml += `</div>`;
+                }
+            }
+
+            return headerHtml + bodyHtml;
+        }           
 
         function shiftToday(offsetDays) {
             const newDate = new Date(currentTodayDate);
