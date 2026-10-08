@@ -2098,6 +2098,28 @@ def teacher_get_makeup_sessions():
 # Make-up sessions are marked with (M).
 # The PDF is print-friendly (grayscale).
 # ============================================================
+def _safe_pdf_text(text):
+    """
+    Remove or replace characters that fpdf2's built-in fonts cannot render.
+
+    The default helvetica font supports only Latin-1. Emojis and other
+    Unicode symbols (🧡, ★, etc.) will cause FPDFUnicodeEncodingException.
+    This helper:
+      - Keeps ASCII and Latin-1 characters intact.
+      - Replaces unsupported characters with '?'.
+    """
+    if text is None:
+        return ""
+    text = str(text)
+    out = []
+    for ch in text:
+        try:
+            ch.encode("latin-1")
+            out.append(ch)
+        except UnicodeEncodeError:
+            out.append("?")
+    return "".join(out)
+
 
 def _build_schedule_pdf(schedule_rows, makeup_rows):
     """
@@ -2168,11 +2190,11 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
 
     # Header
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 8, "Weekly Schedule - YEnglish Exams", ln=True)
+    pdf.cell(0, 8, _safe_pdf_text("Weekly Schedule - YEnglish Exams"), ln=True)
     pdf.set_font("Helvetica", "", 10)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     pdf.cell(0, 6,
-             f"Generated: {generated_at}   |   Weekly sessions: {len(schedule_rows)}   |   Make-up sessions: {len(makeup_rows)}",
+             _safe_pdf_text(f"Generated: {generated_at}   |   Weekly sessions: {len(schedule_rows)}   |   Make-up sessions: {len(makeup_rows)}"),
              ln=True)
     pdf.ln(2)
 
@@ -2245,13 +2267,14 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
                 # First line: student name (bold)
                 # Remaining lines: time + optional title
                 pdf.set_font("Helvetica", "B", 7)
-                pdf.cell(day_col_w, 3.5, cells[day_idx][0][:32], border=0)
+                pdf.cell(day_col_w, 3.5, _safe_pdf_text(cells[day_idx][0][:32]), border=0)
                 # Move to next line inside the cell
                 pdf.set_xy(x, y + 3.5)
                 pdf.set_font("Helvetica", "", 6)
                 for extra_line in cells[day_idx][1:]:
-                    pdf.cell(day_col_w, 3, extra_line[:34], border=0)
+                    pdf.cell(day_col_w, 3, _safe_pdf_text(extra_line[:34]), border=0)
                     pdf.set_xy(x, pdf.get_y() + 3)
+
                 # Draw the cell border around the whole block
                 pdf.rect(x, y, day_col_w, this_row_h)
                 pdf.set_xy(x + day_col_w, y)
@@ -2261,7 +2284,7 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
     # Footer note
     pdf.ln(2)
     pdf.set_font("Helvetica", "I", 8)
-    pdf.cell(0, 5, "(M) = Make-up session. Cells show the session's starting hour.", ln=True)
+    pdf.cell(0, 5, _safe_pdf_text("(M) = Make-up session. Cells show the session's starting hour."), ln=True)
 
     # Return as bytes (no disk write)
     output = pdf.output(dest="S")
