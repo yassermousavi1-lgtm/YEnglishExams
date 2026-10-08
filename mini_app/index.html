@@ -96,6 +96,10 @@
         let allStudents = [];
         let currentTodayDate = new Date();
 
+        // Make-up sessions state
+        let makeupSessions = [];
+        let openMakeupSection = false;
+
         // Word Bank state
         let wordBankQuestions = [];       // array from API
         let wordBankAnswers = {};         // { questionId: { sentenceNumber: word } }
@@ -698,6 +702,222 @@
             } catch (e) {
                 // silently ignore
             }
+        }
+
+        // ============================================================
+        // MAKE-UP SESSIONS (one-off sessions on a specific date)
+        // ============================================================
+        //
+        // Make-up sessions are separate from the weekly class_schedule.
+        // Each has a specific date (YYYY-MM-DD) and is NOT recurring.
+        // They are NOT recorded in attendance and are NOT shown on the
+        // student profile. They appear only in My Schedule (Today Card
+        // and the Upcoming section).
+        // ============================================================
+
+        // ----- Loader -----
+        async function loadMakeupSessions() {
+            try {
+                const response = await fetchAPI('/api/teacher/makeup_sessions');
+                if (response.status === 'success') {
+                    makeupSessions = response.makeup_sessions || [];
+                }
+            } catch (error) {
+                // silent fail; page will show whatever was loaded before
+            }
+        }
+
+        // ----- Helpers -----
+
+        // Returns "YYYY-MM-DD" for a given Date object (local timezone).
+        function toDateKey(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        // Filter make-up sessions whose session_date matches the given date.
+        function getMakeupSessionsForDate(dateStr) {
+            return makeupSessions
+                .filter(s => s.session_date === dateStr)
+                .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+        }
+
+        // Short display like "Oct 15" for a YYYY-MM-DD string.
+        function formatMakeupDateShort(dateStr) {
+            if (!dateStr) return '';
+            const parts = dateStr.split('-');
+            if (parts.length !== 3) return dateStr;
+            const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            try {
+                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            } catch (e) {
+                return dateStr;
+            }
+        }
+
+        // ----- Add / Edit form -----
+        function showAddMakeupForm() {
+            renderMakeupSessionForm(null);
+        }
+
+        function showEditMakeupForm(makeupId) {
+            const session = makeupSessions.find(s => s.id === makeupId);
+            if (!session) { alert('Make-up session not found.'); return; }
+            renderMakeupSessionForm(session);
+        }
+
+        function renderMakeupSessionForm(session) {
+            const isEdit = session !== null;
+
+            // Defaults for Add mode
+            const todayKey = toDateKey(new Date());
+            const studentValue = isEdit
+                ? session.student_id
+                : (allStudents[0]?.id || '');
+            const dateValue = isEdit ? session.session_date : todayKey;
+            const startValue = isEdit ? session.start_time : '16:00';
+            const endValue = isEdit ? session.end_time : '17:00';
+            const titleValue = isEdit ? (session.title || '') : '';
+            const notesValue = isEdit ? (session.notes || '') : '';
+
+            let studentOptions = '';
+            if (allStudents.length === 0) {
+                studentOptions = `<option value="">— No students yet. Please add one first —</option>`;
+            } else {
+                allStudents.forEach(s => {
+                    const sel = s.id === studentValue ? 'selected' : '';
+                    const fullName = `${s.first_name || ''} ${s.last_name || ''}`.trim();
+                    studentOptions += `<option value="${s.id}" ${sel}>${escapeHtml(fullName)}</option>`;
+                });
+            }
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 20px;">
+                    <button class="academic-back-button" onclick="renderMySchedule()">▸ Back</button>
+                    <h2 class="academic-page-title">${isEdit ? '✏️ Edit Make-up Session' : '➕ Add Make-up Session'}</h2>
+
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <label style="color: #9ca3af; font-size: 13px;">Student</label>
+                        <select id="makeupStudent" class="academic-filter-select">
+                            ${studentOptions}
+                        </select>
+
+                        <label style="color: #9ca3af; font-size: 13px;">Date</label>
+                        <input id="makeupDate" type="date" class="academic-input" value="${dateValue}">
+
+                        <label style="color: #9ca3af; font-size: 13px;">Start Time</label>
+                        <input id="makeupStart" type="time" class="academic-input" value="${startValue}">
+
+                        <label style="color: #9ca3af; font-size: 13px;">End Time</label>
+                        <input id="makeupEnd" type="time" class="academic-input" value="${endValue}">
+
+                        <label style="color: #9ca3af; font-size: 13px;">Title (optional)</label>
+                        <input id="makeupTitle" type="text" placeholder="e.g. Extra practice" class="academic-input" value="${escapeHtml(titleValue)}">
+
+                        <label style="color: #9ca3af; font-size: 13px;">Notes (optional)</label>
+                        <input id="makeupNotes" type="text" placeholder="Notes" class="academic-input" value="${escapeHtml(notesValue)}">
+
+                        <button class="academic-primary-btn" style="margin-top: 8px;" onclick="saveMakeupSession(${isEdit ? session.id : 'null'})">
+                            ${isEdit ? 'Save Changes' : 'Add Make-up Session'}
+                        </button>
+
+                        ${isEdit ? `<button class="academic-secondary-btn" style="margin-top: 4px; color: #fca5a5;" onclick="deleteMakeupSession(${session.id})">🗑️ Delete Make-up Session</button>` : ''}
+                    </div>
+
+                    <div id="makeupFormStatus" style="margin-top: 12px; color: #9ca3af; text-align: center;"></div>
+                </div>
+            `;
+        }
+
+        // ----- Save / Delete -----
+        async function saveMakeupSession(makeupId) {
+            const studentId = document.getElementById('makeupStudent').value;
+            const dateVal = document.getElementById('makeupDate').value;
+            const startTime = document.getElementById('makeupStart').value;
+            const endTime = document.getElementById('makeupEnd').value;
+            const title = document.getElementById('makeupTitle').value.trim();
+            const notes = document.getElementById('makeupNotes').value.trim();
+            const statusEl = document.getElementById('makeupFormStatus');
+
+            if (!studentId) {
+                statusEl.textContent = '⚠️ Please select a student.';
+                return;
+            }
+            if (!dateVal) {
+                statusEl.textContent = '⚠️ Please select a date.';
+                return;
+            }
+            if (!startTime || !endTime) {
+                statusEl.textContent = '⚠️ Please enter both start and end times.';
+                return;
+            }
+            if (timeToMinutes(startTime) >= timeToMinutes(endTime)) {
+                statusEl.textContent = '⚠️ End time must be after start time.';
+                return;
+            }
+
+            statusEl.textContent = 'Saving...';
+
+            try {
+                const url = makeupId
+                    ? `/api/teacher/makeup_sessions/${makeupId}`
+                    : '/api/teacher/makeup_sessions';
+                const method = makeupId ? 'PUT' : 'POST';
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({
+                        student_id: parseInt(studentId),
+                        session_date: dateVal,
+                        start_time: startTime,
+                        end_time: endTime,
+                        title: title,
+                        notes: notes
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    await loadMakeupSessions();
+                    renderMySchedule();
+                } else {
+                    statusEl.textContent = '❌ ' + (data.message || 'Failed to save.');
+                }
+            } catch (error) {
+                statusEl.textContent = '❌ Error saving make-up session.';
+            }
+        }
+
+        async function deleteMakeupSession(makeupId) {
+            if (!confirm('Delete this make-up session?')) return;
+            const statusEl = document.getElementById('makeupFormStatus');
+            if (statusEl) statusEl.textContent = 'Deleting...';
+
+            try {
+                const response = await fetch(`/api/teacher/makeup_sessions/${makeupId}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Telegram-Init-Data': telegram?.initData || '' }
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    await loadMakeupSessions();
+                    renderMySchedule();
+                } else {
+                    if (statusEl) statusEl.textContent = '❌ ' + (data.message || 'Failed to delete.');
+                }
+            } catch (error) {
+                if (statusEl) statusEl.textContent = '❌ Error deleting make-up session.';
+            }
+        }
+
+        // ----- Toggle for the Upcoming section (used in C.3.2) -----
+        function toggleMakeupSection() {
+            openMakeupSection = !openMakeupSection;
+            renderMySchedule();
         }
 
         // ============================================================
