@@ -8,6 +8,8 @@ import hashlib
 import requests
 from urllib.parse import parse_qsl
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
+from fpdf import FPDF
 
 
 app = Flask(
@@ -2081,6 +2083,267 @@ def teacher_get_makeup_sessions():
     finally:
         connection.close()
 
+
+# ============================================================
+# PDF EXPORT — WEEKLY SCHEDULE
+# ============================================================
+#
+# Generates a PDF of the weekly schedule in memory (BytesIO),
+# so nothing is written to disk. The PDF contains:
+#   - Rows    = hourly slots (07:00 → 24:00)
+#   - Columns = days of the week (Monday → Sunday)
+#   - Cells   = student sessions at that day+hour
+#
+# Weekly sessions and make-up sessions are merged.
+# Make-up sessions are marked with (M).
+# The PDF is print-friendly (grayscale).
+# ============================================================
+
+def _build_schedule_pdf(schedule_rows, makeup_rows):
+    """
+    Build the weekly schedule PDF and return it as bytes.
+
+    schedule_rows: list of dicts (weekly sessions)
+    makeup_rows:   list of dicts (make-up sessions)
+    """
+    # --- Config ---
+    START_HOUR = 7
+    END_HOUR = 24   # exclusive (last row is 23:00 → 24:00)
+
+    # --- Helpers ---
+    def time_to_minutes(t):
+        if not t:
+            return 0
+        parts = str(t).split(":")
+        try:
+            return int(parts[0]) * 60 + int(parts[1])
+        except Exception:
+            return 0
+
+    def day_name_from_date(date_str):
+        try:
+            parts = date_str.split("-")
+            d = datetime(int(parts[0]), int(parts[1]), int(parts[2]))
+            return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][d.weekday()]
+        except Exception:
+            return None
+
+    day_headers = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_short = {
+        "Monday": "MON", "Tuesday": "TUE", "Wednesday": "WED",
+        "Thursday": "THU", "Friday": "FRI", "Saturday": "SAT", "Sunday": "SUN"
+    }
+
+    # --- Merge all sessions into a single list ---
+    all_sessions = []
+    for s in schedule_rows:
+        all_sessions.append({
+            "kind": "weekly",
+            "day": s["day_of_week"],
+            "start_time": s["start_time"],
+            "end_time": s["end_time"],
+            "student_name": (s.get("student_name") or "").strip(),
+            "title": ""
+        })
+    for m in makeup_rows:
+        if not m.get("session_date"):
+            continue
+        day = day_name_from_date(m["session_date"])
+        if not day:
+            continue
+        all_sessions.append({
+            "kind": "makeup",
+            "day": day,
+            "start_time": m["start_time"],
+            "end_time": m["end_time"],
+            "student_name": (m.get("student_name") or "").strip(),
+            "title": (m.get("title") or "").strip(),
+            "date": m["session_date"]
+        })
+
+    # --- Build PDF ---
+    pdf = FPDF(orientation="L", unit="mm", format="A4")   # Landscape
+    pdf.set_auto_page_break(auto=True, margin=10)
+    pdf.add_page()
+
+    # Header
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, "Weekly Schedule - YEnglish Exams", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    pdf.cell(0, 6,
+             f"Generated: {generated_at}   |   Weekly sessions: {len(schedule_rows)}   |   Make-up sessions: {len(makeup_rows)}",
+             ln=True)
+    pdf.ln(2)
+
+    # --- Draw grid manually ---
+    page_w = pdf.w - pdf.l_margin - pdf.r_margin
+    hour_col_w = 18    # width of time column
+    day_col_w = (page_w - hour_col_w) / 7.0
+    row_h = 9          # base row height
+
+    # Header row
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_fill_color(220, 220, 220)
+    pdf.cell(hour_col_w, 8, "Time", border=1, align="C", fill=True)
+    for d in day_headers:
+        pdf.cell(day_col_w, 8, day_short[d], border=1, align="C", fill=True)
+    pdf.ln(8)
+
+    # Hour rows
+    pdf.set_font("Helvetica", "", 8)
+    for h in range(START_HOUR, END_HOUR):
+        slot_start = h * 60
+        slot_end = (h + 1) * 60
+
+        # Collect cell content for each day first, then draw.
+        cells = []
+        max_lines = 1
+        for day in day_headers:
+            matching = [
+                s for s in all_sessions
+                if s["day"] == day
+                and time_to_minutes(s["start_time"]) >= slot_start
+                and time_to_minutes(s["start_time"]) < slot_end
+            ]
+            matching.sort(key=lambda x: time_to_minutes(x["start_time"]))
+            lines = []
+            for s in matching:
+                marker = " (M)" if s["kind"] == "makeup" else ""
+                name_line = f"{s['student_name']}{marker}"
+                time_line = f"{s['start_time']}-{s['end_time']}"
+                lines.append(name_line)
+                lines.append(time_line)
+                if s["title"]:
+                    lines.append(s["title"])
+            cells.append(lines)
+            if len(lines) > max_lines:
+                max_lines = len(lines)
+
+        # Row height depends on content
+        this_row_h = max(row_h, 4 + max_lines * 3.5)
+
+        # Time column
+        time_label = f"{h:02d}:00\n{h+1:02d}:00" if h < 23 else f"{h:02d}:00\n24:00"
+        pdf.set_fill_color(240, 240, 240)
+        pdf.set_font("Helvetica", "B", 8)
+        # Multi-cell for two-line time label
+        x0 = pdf.get_x()
+        y0 = pdf.get_y()
+        pdf.multi_cell(hour_col_w, this_row_h / 2, f"{h:02d}:00\n{h+1:02d}:00".replace("24:00", "24:00"),
+                       border=1, align="C", fill=True)
+        pdf.set_xy(x0 + hour_col_w, y0)
+
+        # Day cells
+        pdf.set_font("Helvetica", "", 7)
+        for day_idx, day in enumerate(day_headers):
+            x = pdf.get_x()
+            y = pdf.get_y()
+            if not cells[day_idx]:
+                pdf.cell(day_col_w, this_row_h, "", border=1)
+            else:
+                # First line: student name (bold)
+                # Remaining lines: time + optional title
+                pdf.set_font("Helvetica", "B", 7)
+                pdf.cell(day_col_w, 3.5, cells[day_idx][0][:32], border=0)
+                # Move to next line inside the cell
+                pdf.set_xy(x, y + 3.5)
+                pdf.set_font("Helvetica", "", 6)
+                for extra_line in cells[day_idx][1:]:
+                    pdf.cell(day_col_w, 3, extra_line[:34], border=0)
+                    pdf.set_xy(x, pdf.get_y() + 3)
+                # Draw the cell border around the whole block
+                pdf.rect(x, y, day_col_w, this_row_h)
+                pdf.set_xy(x + day_col_w, y)
+        # End of row
+        pdf.set_xy(pdf.l_margin, y0 + this_row_h)
+
+    # Footer note
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.cell(0, 5, "(M) = Make-up session. Cells show the session's starting hour.", ln=True)
+
+    # Return as bytes (no disk write)
+    output = pdf.output(dest="S")
+    # fpdf2 returns bytearray in some versions, str in others. Normalize to bytes.
+    if isinstance(output, str):
+        output = output.encode("latin-1")
+    elif isinstance(output, bytearray):
+        output = bytes(output)
+    return output
+
+
+@app.route("/api/teacher/schedule/pdf", methods=["GET"])
+def teacher_schedule_pdf():
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+
+        # Fetch weekly sessions
+        cursor.execute("""
+            SELECT
+                cs.id, cs.student_id, cs.day_of_week, cs.start_time, cs.end_time, cs.notes,
+                s.first_name, s.last_name
+            FROM class_schedule cs
+            JOIN students s ON s.id = cs.student_id
+            ORDER BY cs.day_of_week, cs.start_time
+        """)
+        weekly = []
+        for r in cursor.fetchall():
+            weekly.append({
+                "id": r["id"],
+                "day_of_week": r["day_of_week"],
+                "start_time": r["start_time"],
+                "end_time": r["end_time"],
+                "student_name": f"{r['first_name'] or ''} {r['last_name'] or ''}".strip()
+            })
+
+        # Fetch make-up sessions
+        cursor.execute("""
+            SELECT
+                ms.id, ms.student_id, ms.session_date, ms.start_time, ms.end_time, ms.title, ms.notes,
+                s.first_name, s.last_name
+            FROM makeup_sessions ms
+            JOIN students s ON s.id = ms.student_id
+            ORDER BY ms.session_date, ms.start_time
+        """)
+        makeups = []
+        for r in cursor.fetchall():
+            makeups.append({
+                "id": r["id"],
+                "session_date": r["session_date"],
+                "start_time": r["start_time"],
+                "end_time": r["end_time"],
+                "title": r["title"],
+                "student_name": f"{r['first_name'] or ''} {r['last_name'] or ''}".strip()
+            })
+
+        # Build the PDF in memory
+        pdf_bytes = _build_schedule_pdf(weekly, makeups)
+
+        # Return as downloadable PDF
+        response = app.response_class(
+            response=pdf_bytes,
+            status=200,
+            mimetype="application/pdf"
+        )
+        response.headers["Content-Disposition"] = 'inline; filename="weekly_schedule.pdf"'
+        return response
+
+    except Exception as error:
+        print("PDF GENERATION ERROR:", error)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": "Failed to generate PDF."}), 500
+    finally:
+        connection.close()
 
 @app.route("/api/teacher/makeup_sessions", methods=["POST"])
 def teacher_add_makeup_session():
