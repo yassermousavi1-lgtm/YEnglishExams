@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test PDF endpoint</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <h1>Test PDF endpoint</h1>
+    <p id="status">Opening...</p>
+    <button onclick="testPDF()">Test</button>
+    <script>
+        function testPDF() {
+            document.getElementById('status').textContent = 'Fetching...';
+            const tg = window.Telegram?.WebApp;
+            const initData = tg?.initData || '';
+            console.log('InitData length:', initData.length);
+
+            fetch('/api/teacher/schedule/pdf', {
+                headers: { 'X-Telegram-Init-Data': initData }
+            }).then(async r => {
+                console.log('Status:', r.status);
+                console.log('Content-Type:', r.headers.get('content-type'));
+                const blob = await r.blob();
+                console.log('Blob size:', blob.size);
+                const text = await blob.slice(0, 4).text();
+                console.log('Header:', text);
+                document.getElementById('status').textContent = 
+                    'Status=' + r.status + ' | Content-Type=' + r.headers.get('content-type') + 
+                    ' | Size=' + blob.size + ' | Header=' + text;
+                if (r.ok) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'weekly_schedule.pdf';
+                    document.body.appendChild(a);
+                    a.click();
+                }
+            }).catch(e => {
+                console.error('Error:', e);
+                document.getElementById('status').textContent = 'Error: ' + e.message;
+            });
+        }
+    </script>
+</body>
+</html>
