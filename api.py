@@ -2250,13 +2250,18 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
         row_top_x = table_x
         row_top_y = pdf.get_y()
 
-        # Time cell (two lines: from / to)
+               # Time cell (two lines: from / to)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_fill_color(240, 240, 240)
         pdf.set_xy(row_top_x, row_top_y)
         time_text = f"{h:02d}:00\n{h+1:02d}:00"
         pdf.multi_cell(hour_col_w, hour_row_h / 2, time_text,
                        border=1, align="C", fill=True)
+
+        # IMPORTANT: after multi_cell, the cursor returns to the
+        # left margin of the cell. We must move it manually to the
+        # right edge of the Time column before drawing day cells.
+        pdf.set_xy(row_top_x + hour_col_w, row_top_y)
 
         # For each day, draw its cell
         for day in day_headers:
