@@ -2358,9 +2358,17 @@ def _build_schedule_pdf(schedule_rows, makeup_rows):
         output = bytes(output)
     return output
 
-
-@app.route("/api/teacher/schedule/pdf", methods=["GET"])
+@app.route("/api/teacher/schedule/pdf", methods=["POST"])
 def teacher_schedule_pdf():
+    """
+    Generates the weekly schedule PDF and sends it to the teacher
+    via the Telegram bot as a document.
+
+    Why POST instead of GET and why we don't return the PDF directly:
+      On Android, Telegram Mini Apps block direct file downloads.
+      The reliable way is to send the PDF through the bot to the
+      teacher's private chat with the bot.
+    """
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
         return jsonify({"status": "error", "message": auth_result["message"]}), 401
@@ -2414,14 +2422,38 @@ def teacher_schedule_pdf():
         # Build the PDF in memory
         pdf_bytes = _build_schedule_pdf(weekly, makeups)
 
-        # Return as downloadable PDF
-        response = app.response_class(
-            response=pdf_bytes,
-            status=200,
-            mimetype="application/pdf"
-        )
-        response.headers["Content-Disposition"] = 'inline; filename="weekly_schedule.pdf"'
-        return response
+        # Send to the teacher via the Telegram bot
+        if not TELEGRAM_BOT_TOKEN:
+            return jsonify({"status": "error", "message": "Bot token is not configured on the server."}), 500
+
+        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+
+        files = {
+            "document": ("weekly_schedule.pdf", pdf_bytes, "application/pdf")
+        }
+        data = {
+            "chat_id": TEACHER_TELEGRAM_ID,
+            "caption": "📅 Weekly Schedule - YEnglish Exams"
+        }
+
+        try:
+            tg_response = requests.post(telegram_url, data=data, files=files, timeout=30)
+            tg_json = tg_response.json()
+        except Exception as tg_err:
+            print("TELEGRAM SEND ERROR:", tg_err)
+            return jsonify({"status": "error", "message": "Could not reach Telegram."}), 500
+
+        if not tg_json.get("ok"):
+            print("TELEGRAM API ERROR:", tg_json)
+            return jsonify({
+                "status": "error",
+                "message": "Telegram refused the file: " + str(tg_json.get("description", "unknown"))
+            }), 500
+
+        return jsonify({
+            "status": "success",
+            "message": "PDF sent to your Telegram chat with the bot."
+        })
 
     except Exception as error:
         print("PDF GENERATION ERROR:", error)

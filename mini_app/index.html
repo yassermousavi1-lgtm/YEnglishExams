@@ -516,61 +516,58 @@
         //   authentication. A plain <a href> cannot send custom
         //   headers, so we must use fetch() and build a Blob URL.
         // ------------------------------------------------------------
+        // ------------------------------------------------------------
+        // PDF Export — Weekly Schedule (via Telegram bot)
+        // ------------------------------------------------------------
+        //
+        // On Android, Telegram Mini Apps block direct file downloads.
+        // Instead, we ask the backend to generate the PDF and send
+        // it to the teacher's private chat with the bot.
+        //
+        // The teacher then receives a PDF file inside the Telegram
+        // chat with the bot.
+        // ------------------------------------------------------------
         async function exportSchedulePDF() {
-            // Find a good place to show status. We'll create a temporary
-            // status line under the buttons.
+            // Find or create a status line under the button.
             let statusEl = document.getElementById('pdfExportStatus');
             if (!statusEl) {
                 statusEl = document.createElement('div');
                 statusEl.id = 'pdfExportStatus';
                 statusEl.style.cssText = 'margin-top: 8px; margin-bottom: 16px; text-align: center; color: #9ca3af; font-size: 13px;';
-                // Insert right after the Export PDF button
                 const btn = event?.target?.closest?.('button');
                 if (btn && btn.parentNode) {
                     btn.parentNode.insertBefore(statusEl, btn.nextSibling);
                 }
             }
-            statusEl.textContent = '⏳ Generating PDF...';
+
+            statusEl.textContent = '⏳ Generating and sending PDF...';
 
             try {
                 const response = await fetch('/api/teacher/schedule/pdf', {
-                    method: 'GET',
+                    method: 'POST',
                     headers: {
                         'X-Telegram-Init-Data': telegram?.initData || ''
                     }
                 });
 
-                if (!response.ok) {
-                    let msg = 'Failed to generate PDF (HTTP ' + response.status + ').';
-                    try {
-                        const j = await response.json();
-                        if (j && j.message) msg = j.message;
-                    } catch (e) { /* ignore */ }
-                    statusEl.textContent = '❌ ' + msg;
-                    return;
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    data = null;
                 }
 
-                const blob = await response.blob();
-
-                // Create a download link and click it
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'weekly_schedule.pdf';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-
-                // Free memory
-                setTimeout(() => URL.revokeObjectURL(url), 2000);
-
-                statusEl.textContent = '✅ PDF ready. Check your downloads.';
-                setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 4000);
-
+                if (response.ok && data && data.status === 'success') {
+                    statusEl.textContent = '✅ PDF sent to your Telegram chat with the bot.';
+                    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 6000);
+                } else {
+                    const msg = (data && data.message) ? data.message : ('HTTP ' + response.status);
+                    statusEl.textContent = '❌ ' + msg;
+                }
             } catch (error) {
                 statusEl.textContent = '❌ Error: ' + (error.message || 'Unknown error.');
             }
-        }
+        }        
         function shiftToday(offsetDays) {
             const newDate = new Date(currentTodayDate);
             newDate.setDate(newDate.getDate() + offsetDays);
