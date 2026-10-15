@@ -1,23 +1,8 @@
 // ============================================================
-// YEnglish Exams — Service Worker
-// ============================================================
-//
-// Purpose:
-//   Cache static files (HTML, CSS, JS) so that the Mini App
-//   loads faster and works even if the connection is slow.
-//
-// Strategy:
-//   Network First, Fallback to Cache
-//   - Try the network first.
-//   - If the network fails, serve the cached version.
-//   - For navigation requests, fall back to /index.html.
-//
-// Versioning:
-//   When you change any cached file, bump CACHE_VERSION below
-//   to force the old cache to be replaced.
+// YEnglish Exams — Service Worker (v3)
 // ============================================================
 
-const CACHE_VERSION = 'yenglish-v2';
+const CACHE_VERSION = 'yenglish-v3';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -29,11 +14,12 @@ const STATIC_ASSETS = [
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_VERSION).then(async (cache) => {
-            // Cache each asset individually so one failure
-            // does not prevent the others from being cached.
             for (const asset of STATIC_ASSETS) {
                 try {
-                    await cache.add(asset);
+                    const response = await fetch(asset, { cache: 'reload' });
+                    if (response.ok) {
+                        await cache.put(asset, response);
+                    }
                 } catch (err) {
                     console.warn('SW pre-cache failed for', asset, err);
                 }
@@ -57,69 +43,58 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// ----- Fetch: Network First, Fallback to Cache -----
+// ----- Fetch -----
 self.addEventListener('fetch', (event) => {
     const req = event.request;
 
-    // Only handle GET requests
-    if (req.method !== 'GET') {
-        return;
-    }
+    // Only handle GET
+    if (req.method !== 'GET') return;
 
-    // Never intercept API calls — always go to network.
     const url = new URL(req.url);
-    if (url.pathname.startsWith('/api/')) {
-        return;
-    }
 
-    // Only handle same-origin requests and the Telegram script
+    // Never intercept API calls
+    if (url.pathname.startsWith('/api/')) return;
+
+    // Only handle same-origin + the Telegram script
     const isSameOrigin = url.origin === self.location.origin;
     const isTelegramScript = req.url.indexOf('telegram-web-app.js') !== -1;
+    if (!isSameOrigin && !isTelegramScript) return;
 
-    if (!isSameOrigin && !isTelegramScript) {
-        return;
-    }
+    // Detect navigation requests (opening the Mini App)
+    const isNavigation =
+        req.mode === 'navigate' ||
+        req.destination === 'document' ||
+        req.destination === '';
 
     event.respondWith(
         fetch(req)
             .then((response) => {
-                // Cache the fresh response
                 if (response && response.ok) {
-                    const responseClone = response.clone();
+                    const clone = response.clone();
                     caches.open(CACHE_VERSION).then((cache) => {
-                        cache.put(req, responseClone).catch(() => {});
+                        cache.put(req, clone).catch(() => {});
                     });
                 }
                 return response;
             })
-            .catch(() => {
-                // Network failed — try the exact cache entry first
-                return caches.match(req).then((cached) => {
-                    if (cached) {
-                        return cached;
-                    }
+            .catch(async () => {
+                // 1) Exact match (ignore query params like tgWebAppData=...)
+                const exact = await caches.match(req, { ignoreSearch: true });
+                if (exact) return exact;
 
-                    // If this is a navigation request (opening the Mini App),
-                    // fall back to the cached index.html.
-                    if (req.mode === 'navigate') {
-                        return caches.match('/index.html').then((indexCached) => {
-                            if (indexCached) {
-                                return indexCached;
-                            }
-                            return new Response('Offline', {
-                                status: 503,
-                                statusText: 'Offline',
-                                headers: { 'Content-Type': 'text/plain' }
-                            });
-                        });
-                    }
+                // 2) For navigation: always fall back to index.html
+                if (isNavigation) {
+                    const indexFallback =
+                        (await caches.match('/index.html', { ignoreSearch: true })) ||
+                        (await caches.match('/', { ignoreSearch: true }));
+                    if (indexFallback) return indexFallback;
+                }
 
-                    // Nothing in cache and not a navigation — return offline
-                    return new Response('Offline', {
-                        status: 503,
-                        statusText: 'Offline',
-                        headers: { 'Content-Type': 'text/plain' }
-                    });
+                // 3) Nothing in cache
+                return new Response('Offline', {
+                    status: 503,
+                    statusText: 'Offline',
+                    headers: { 'Content-Type': 'text/plain' }
                 });
             })
     );
