@@ -6,25 +6,18 @@
 //   Cache static files (HTML, CSS, JS) so that the Mini App
 //   loads faster and works even if the connection is slow.
 //
-// What is cached:
-//   - index.html
-//   - style.css
-//   - telegram-web-app.js
-//
-// What is NOT cached:
-//   - Any /api/* endpoint (always fetched from the network)
-//
 // Strategy:
 //   Network First, Fallback to Cache
 //   - Try the network first.
 //   - If the network fails, serve the cached version.
+//   - For navigation requests, fall back to /index.html.
 //
 // Versioning:
 //   When you change any cached file, bump CACHE_VERSION below
 //   to force the old cache to be replaced.
 // ============================================================
 
-const CACHE_VERSION = 'yenglish-v1';
+const CACHE_VERSION = 'yenglish-v2';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -35,12 +28,16 @@ const STATIC_ASSETS = [
 // ----- Install: pre-cache static assets -----
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_VERSION).then((cache) => {
-            return cache.addAll(STATIC_ASSETS).catch((err) => {
-                // Some assets may fail (e.g. cross-origin).
-                // Do not block installation.
-                console.warn('SW pre-cache partial failure:', err);
-            });
+        caches.open(CACHE_VERSION).then(async (cache) => {
+            // Cache each asset individually so one failure
+            // does not prevent the others from being cached.
+            for (const asset of STATIC_ASSETS) {
+                try {
+                    await cache.add(asset);
+                } catch (err) {
+                    console.warn('SW pre-cache failed for', asset, err);
+                }
+            }
         }).then(() => self.skipWaiting())
     );
 });
@@ -96,12 +93,28 @@ self.addEventListener('fetch', (event) => {
                 return response;
             })
             .catch(() => {
-                // Network failed — fall back to cache
+                // Network failed — try the exact cache entry first
                 return caches.match(req).then((cached) => {
                     if (cached) {
                         return cached;
                     }
-                    // Nothing in cache — return a minimal offline response
+
+                    // If this is a navigation request (opening the Mini App),
+                    // fall back to the cached index.html.
+                    if (req.mode === 'navigate') {
+                        return caches.match('/index.html').then((indexCached) => {
+                            if (indexCached) {
+                                return indexCached;
+                            }
+                            return new Response('Offline', {
+                                status: 503,
+                                statusText: 'Offline',
+                                headers: { 'Content-Type': 'text/plain' }
+                            });
+                        });
+                    }
+
+                    // Nothing in cache and not a navigation — return offline
                     return new Response('Offline', {
                         status: 503,
                         statusText: 'Offline',
