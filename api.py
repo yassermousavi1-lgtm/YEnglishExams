@@ -207,6 +207,26 @@ def get_database_connection():
     except sqlite3.OperationalError:
         pass
 
+
+    # error_logs table — for client/server error tracking (teacher-only view)
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS error_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                error_type TEXT,
+                error_message TEXT,
+                error_stack TEXT,
+                page TEXT,
+                user_id TEXT,
+                user_role TEXT,
+                user_agent TEXT,
+                is_read BOOLEAN DEFAULT 0
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
     return connection
 
 
@@ -566,6 +586,235 @@ def get_current_user():
         return jsonify(response)
     finally:
         connection.close()
+# ============================================================
+# ERROR LOGGING (client -> server)
+# ============================================================
+#
+# Both teachers and students can POST errors here.
+# The endpoint never fails the client — logging must not break UX.
+#
+# Students can only WRITE errors (this endpoint).
+# Only the teacher can READ them (see /api/teacher/errors below).
+# ============================================================
+
+@app.route("/api/errors", methods=["POST"])
+def log_error():
+    """
+    Receive an error report from any authenticated client
+    (teacher or student) and store it in the error_logs table.
+
+    Always returns 200 OK — even if logging fails — so that the
+    client is never blocked by a logging problem.
+    """
+    # Validate Telegram auth (we want to know who sent the error)
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        # We do not want to block the client if auth is missing;
+        # just return OK without storing anything.
+        return jsonify({"status": "success", "message": "Ignored (no auth)."}), 200
+
+    telegram_user = auth_result["user"]
+    telegram_id = str(telegram_user.get("id", ""))
+
+    data = request.get_json(silent=True) or {}
+
+    error_type = (data.get("error_type") or "unknown")[:50]
+    error_message = (data.get("error_message") or "")[:2000]
+    error_stack = (data.get("error_stack") or "")[:4000]
+    page = (data.get("page") or "")[:200]
+    user_agent = (data.get("user_agent") or "")[:500]
+
+    # Determine role (teacher or student) using existing helper
+    role = "teacher" if is_teacher(telegram_user.get("id")) else "student"
+
+    connection = None
+    try:
+        connection = get_database_connection()
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO error_logs
+                (error_type, error_message, error_stack, page, user_id, user_role, user_agent, is_read)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        """, (
+            error_type,
+            error_message,
+            error_stack,
+            page,
+            telegram_id,
+            role,
+            user_agent
+        ))
+        connection.commit()
+        return jsonify({"status": "success", "message": "Error logged."}), 200
+    except Exception as err:
+        # Never fail the client because of logging.
+        print("ERROR LOGGING FAILED:", err)
+        return jsonify({"status": "success", "message": "Ignored (logging failed)."}), 200
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+# ============================================================
+# ERROR LOGS — teacher-only reading endpoints
+# ============================================================
+
+@app.route("/api/teacher/errors/unread_count", methods=["GET"])
+def teacher_errors_unread_count():
+    """
+    Return the number of unread errors (for the Dashboard icon badge).
+    Teacher-only.
+    """
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM error_logs WHERE is_read = 0")
+        row = cursor.fetchone()
+        count = row["cnt"] if row else 0
+        return jsonify({"status": "success", "unread_count": count})
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/errors", methods=["GET"])
+def teacher_get_errors():
+    """
+    List errors, newest first. Teacher-only.
+
+    Optional query parameter:
+      ?unread_only=1  -> only unread errors
+    Optional limit:
+      ?limit=100       -> default 100, max 500
+    """
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    unread_only = request.args.get("unread_only", "0") == "1"
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except ValueError:
+        limit = 100
+    limit = max(1, min(limit, 500))
+
+    connection = get_database_connection()
+    try:
+        cursor = connection.cursor()
+        if unread_only:
+            cursor.execute("""
+                SELECT id, timestamp, error_type, error_message, error_stack,
+                       page, user_id, user_role, user_agent, is_read
+                FROM error_logs
+                WHERE is_read = 0
+                ORDER BY id DESC
+                LIMIT ?
+            """, (limit,))
+        else:
+            cursor.execute("""
+                SELECT id, timestamp, error_type, error_message, error_stack,
+                       page, user_id, user_role, user_agent, is_read
+                FROM error_logs
+                ORDER BY id DESC
+                LIMIT ?
+            """, (limit,))
+        rows = cursor.fetchall()
+
+        errors = []
+        for r in rows:
+            errors.append({
+                "id": r["id"],
+                "timestamp": r["timestamp"],
+                "error_type": r["error_type"],
+                "error_message": r["error_message"],
+                "error_stack": r["error_stack"],
+                "page": r["page"],
+                "user_id": r["user_id"],
+                "user_role": r["user_role"],
+                "user_agent": r["user_agent"],
+                "is_read": bool(r["is_read"])
+            })
+
+        return jsonify({
+            "status": "success",
+            "errors": errors,
+            "total": len(errors),
+            "unread_only": unread_only
+        })
+    finally:
+        connection.close()
+
+
+@app.route("/api/teacher/errors/mark_read", methods=["POST"])
+def teacher_errors_mark_read():
+    """
+    Mark errors as read. Teacher-only.
+
+    Body options:
+      { "all": true }                 -> mark ALL errors as read
+      { "ids": [1, 2, 3] }            -> mark specific ids as read
+
+    Returns the new unread_count.
+    """
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    data = request.get_json(silent=True) or {}
+
+    connection = get_database_connection()
+    cursor = connection.cursor()
+    try:
+        if data.get("all") is True:
+            cursor.execute("UPDATE error_logs SET is_read = 1 WHERE is_read = 0")
+        elif isinstance(data.get("ids"), list) and data["ids"]:
+            # Only allow integer ids to avoid SQL injection via list
+            safe_ids = []
+            for x in data["ids"]:
+                try:
+                    safe_ids.append(int(x))
+                except (TypeError, ValueError):
+                    continue
+            if safe_ids:
+                placeholders = ",".join("?" for _ in safe_ids)
+                cursor.execute(
+                    f"UPDATE error_logs SET is_read = 1 WHERE id IN ({placeholders})",
+                    tuple(safe_ids)
+                )
+        else:
+            return jsonify({"status": "error", "message": "Provide 'all': true or 'ids': [..]."}), 400
+
+        connection.commit()
+
+        cursor.execute("SELECT COUNT(*) AS cnt FROM error_logs WHERE is_read = 0")
+        row = cursor.fetchone()
+        unread = row["cnt"] if row else 0
+
+        return jsonify({
+            "status": "success",
+            "message": "Marked as read.",
+            "unread_count": unread
+        })
+    except Exception as error:
+        connection.rollback()
+        return jsonify({"status": "error", "message": str(error)}), 500
+    finally:
+        connection.close()
+
 
 
 # ============================================================

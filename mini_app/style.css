@@ -1167,3 +1167,100 @@ body {
 .exam-category-arrow.open {
     transform: rotate(90deg);
 }
+
+/* ============================================================
+   ERROR LOGS — dashboard icon + page
+   ============================================================ */
+
+.dashboard-error-icon {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid #374151;
+    background: #111827;
+    color: #6b7280;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    font-family: inherit;
+    padding: 0;
+    line-height: 1;
+}
+
+.dashboard-error-icon:hover {
+    background: #1a2744;
+    border-color: #4b5563;
+    color: #e5e7eb;
+}
+
+.dashboard-error-icon.has-unread {
+    background: #7f1d1d;
+    border-color: #ef4444;
+    color: #fecaca;
+    animation: error-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes error-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+    50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+.error-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.error-log-row {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.error-log-row.unread {
+    border-left: 4px solid #ef4444;
+}
+
+.error-log-row.read {
+    border-left: 4px solid #374151;
+    opacity: 0.75;
+}
+
+.error-log-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: #1f2937;
+    color: #9ca3af;
+    margin-right: 6px;
+}
+
+.error-log-type.js_error { background: #7f1d1d; color: #fecaca; }
+.error-log-type.unhandled_promise { background: #78350f; color: #fde68a; }
+.error-log-type.network { background: #1e3a8a; color: #bfdbfe; }
+.error-log-type.timeout { background: #78350f; color: #fde68a; }

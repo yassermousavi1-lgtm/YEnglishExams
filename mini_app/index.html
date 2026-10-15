@@ -142,6 +142,94 @@
         }
 
         // ============================================================
+        // GLOBAL ERROR LOGGING (client -> server)
+        // ============================================================
+        //
+        // Silent in the background. Reports JavaScript errors and
+        // unhandled promise rejections to the server so that the
+        // teacher can review them later.
+        //
+        // The student is NEVER notified — this runs silently.
+        // Logging failures are also silent (never break the UI).
+        // ============================================================
+
+        function getCurrentPageLabel() {
+            // Best-effort page detection from the visible card content.
+            try {
+                const titleEl = document.querySelector('.academic-page-title');
+                if (titleEl && titleEl.textContent) {
+                    return titleEl.textContent.trim().slice(0, 100);
+                }
+                const wbTitle = document.querySelector('.wb-title');
+                if (wbTitle && wbTitle.textContent) {
+                    return 'Word Bank: ' + wbTitle.textContent.trim().slice(0, 80);
+                }
+                const card = document.querySelector('.exam-card');
+                if (card && card.querySelector('.preview-banner')) {
+                    return 'Preview Mode';
+                }
+                return 'Unknown';
+            } catch (e) {
+                return 'Unknown';
+            }
+        }
+
+        async function reportError(errorType, errorMessage, errorStack) {
+            try {
+                const payload = {
+                    error_type: String(errorType || 'unknown').slice(0, 50),
+                    error_message: String(errorMessage || '').slice(0, 2000),
+                    error_stack: String(errorStack || '').slice(0, 4000),
+                    page: getCurrentPageLabel(),
+                    user_agent: (navigator.userAgent || '').slice(0, 500)
+                };
+                await fetch('/api/errors', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify(payload)
+                });
+            } catch (e) {
+                // Silently ignore — logging must never break UX.
+            }
+        }
+
+        window.addEventListener('error', function (event) {
+            try {
+                // Ignore errors originating from Telegram's own script.
+                const src = event.filename || '';
+                if (src.indexOf('telegram-web-app.js') !== -1) return;
+
+                reportError(
+                    'js_error',
+                    event.message || 'Unknown JS error',
+                    (event.error && event.error.stack) ? event.error.stack : ''
+                );
+            } catch (e) { /* ignore */ }
+        });
+
+        window.addEventListener('unhandledrejection', function (event) {
+            try {
+                const reason = event.reason;
+                let msg = 'Unhandled promise rejection';
+                let stack = '';
+                if (reason) {
+                    if (typeof reason === 'string') {
+                        msg = reason;
+                    } else if (reason.message) {
+                        msg = reason.message;
+                        stack = reason.stack || '';
+                    }
+                }
+                reportError('unhandled_promise', msg, stack);
+            } catch (e) { /* ignore */ }
+        });
+
+
+
+        // ============================================================
         // ACADEMIC HEADER
         // ============================================================
 
@@ -161,11 +249,14 @@
             const card = document.querySelector('.exam-card');
             if (card) card.style.overflow = '';
         }
-        function renderDashboard(userData) {
+                function renderDashboard(userData) {
             resetCardOverflow();
             document.querySelector('.exam-card').innerHTML = `
-                <div style="padding: 24px 20px;">
-                    
+                <div style="padding: 24px 20px; position: relative;">
+                    <button id="errorLogIcon" class="dashboard-error-icon" onclick="loadErrorLogs()" title="Error Logs">
+                        🐞
+                    </button>
+
                     <div style="text-align: center; margin-bottom: 32px;">
                         <h1 style="color: #f9fafb; font-size: 22px; font-weight: 600; margin: 0;">YEnglish Exams</h1>
                         <p style="color: #9ca3af; font-size: 14px; margin: 4px 0 0 0;">Teacher Dashboard</p>
@@ -224,6 +315,158 @@
                     <p style="color: #4b5563; text-align: center; font-size: 12px; margin-top: 24px;">YEnglish Exams v2.0</p>
                 </div>
             `;
+
+            // Check for unread errors on every dashboard render
+            updateErrorIcon();
+        }
+        // ============================================================
+        // ERROR LOGS — Teacher-only view
+        // ============================================================
+        //
+        // The icon in the dashboard turns red when there are unread
+        // errors. Clicking it opens the Error Logs page.
+        //
+        // Students never see this page and cannot read error logs.
+        // ============================================================
+
+        async function updateErrorIcon() {
+            const icon = document.getElementById('errorLogIcon');
+            if (!icon) return;
+
+            try {
+                const data = await fetchAPI('/api/teacher/errors/unread_count');
+                if (data && data.status === 'success') {
+                    const count = data.unread_count || 0;
+                    if (count > 0) {
+                        icon.classList.add('has-unread');
+                        // Show badge with count
+                        let badge = icon.querySelector('.error-badge');
+                        if (!badge) {
+                            badge = document.createElement('span');
+                            badge.className = 'error-badge';
+                            icon.appendChild(badge);
+                        }
+                        badge.textContent = count > 99 ? '99+' : String(count);
+                    } else {
+                        icon.classList.remove('has-unread');
+                        const badge = icon.querySelector('.error-badge');
+                        if (badge) badge.remove();
+                    }
+                }
+            } catch (e) {
+                // Silent — never break dashboard because of this
+            }
+        }
+
+        async function loadErrorLogs() {
+            document.querySelector('.exam-card').innerHTML = `<div style="text-align: center; padding: 40px;"><p style="color: #9ca3af;">Loading error logs...</p></div>`;
+
+            try {
+                const data = await fetchAPI('/api/teacher/errors');
+                if (!data || data.status !== 'success') {
+                    showError((data && data.message) || 'Failed to load error logs.');
+                    return;
+                }
+                renderErrorLogs(data.errors || []);
+            } catch (error) {
+                showError('Error loading error logs.');
+            }
+        }
+
+        function renderErrorLogs(errors) {
+            const total = errors.length;
+            const unread = errors.filter(e => !e.is_read).length;
+
+            let listHtml = '';
+            if (total === 0) {
+                listHtml = `<p style="color: #9ca3af; text-align: center; padding: 24px;">No errors logged. 🎉</p>`;
+            } else {
+                errors.forEach(e => {
+                    const isUnread = !e.is_read;
+                    const typeClass = 'error-log-type ' + (e.error_type || 'unknown').replace(/[^a-z_]/g, '_');
+                    const shortTime = (e.timestamp || '').replace('T', ' ').slice(0, 19);
+
+                    listHtml += `
+                        <div class="error-log-row ${isUnread ? 'unread' : 'read'}">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                                <span class="${typeClass}">${escapeHtml(e.error_type || 'unknown')}</span>
+                                <span style="color: #6b7280; font-size: 11px; white-space: nowrap;">${escapeHtml(shortTime)}</span>
+                            </div>
+                            <div style="color: #f9fafb; font-size: 13px; margin-bottom: 6px; word-break: break-word;">
+                                ${escapeHtml(e.error_message || '(no message)')}
+                            </div>
+                            <div style="color: #9ca3af; font-size: 11px; display: flex; flex-wrap: wrap; gap: 6px;">
+                                <span>📍 ${escapeHtml(e.page || 'Unknown')}</span>
+                                <span>👤 ${escapeHtml(e.user_role || 'unknown')} (${escapeHtml(e.user_id || '-')})</span>
+                            </div>
+                            ${e.error_stack ? `
+                                <details style="margin-top: 6px;">
+                                    <summary style="color: #60a5fa; font-size: 11px; cursor: pointer;">Show details</summary>
+                                    <pre style="color: #9ca3af; font-size: 10px; background: #0f172a; padding: 8px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 6px 0 0 0;">${escapeHtml(e.error_stack)}</pre>
+                                </details>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+            }
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <button class="academic-back-button" style="margin-bottom: 0;" onclick="renderDashboard(USER_DATA)">▸ Back</button>
+                        ${unread > 0 ? `<button class="academic-primary-btn small" onclick="markAllErrorsRead()">Mark all read</button>` : ''}
+                    </div>
+
+                    <h2 class="academic-page-title">🐞 Error Logs</h2>
+
+                    <div class="academic-card" style="margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-around; gap: 12px; text-align: center;">
+                            <div>
+                                <div style="color: #f9fafb; font-size: 24px; font-weight: 800;">${total}</div>
+                                <div style="color: #9ca3af; font-size: 12px;">Total (last 100)</div>
+                            </div>
+                            <div>
+                                <div style="color: ${unread > 0 ? '#ef4444' : '#9ca3af'}; font-size: 24px; font-weight: 800;">${unread}</div>
+                                <div style="color: #9ca3af; font-size: 12px;">Unread</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${listHtml}
+                </div>
+            `;
+
+            // Since the teacher just viewed them, mark them read automatically
+            if (unread > 0) {
+                // Delay a bit so the page can render first
+                setTimeout(() => markAllErrorsRead(true), 500);
+            }
+        }
+
+        async function markAllErrorsRead(silent) {
+            try {
+                const response = await fetch('/api/teacher/errors/mark_read', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({ all: true })
+                });
+                const data = await response.json();
+                if (!silent && data && data.status === 'success') {
+                    loadErrorLogs();
+                }
+                // Update icon to off
+                const icon = document.getElementById('errorLogIcon');
+                if (icon) {
+                    icon.classList.remove('has-unread');
+                    const badge = icon.querySelector('.error-badge');
+                    if (badge) badge.remove();
+                }
+            } catch (e) {
+                // Silent
+            }
         }
 
         // ============================================================
