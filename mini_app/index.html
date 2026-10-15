@@ -120,26 +120,211 @@
         // ============================================================
         // API HELPERS
         // ============================================================
+        // ============================================================
+        // GLOBAL FETCH TIMEOUT
+        // ============================================================
+        //
+        // Wrap window.fetch with an 8-second timeout so that any
+        // fetch call (not just those using fetchAPI) is automatically
+        // aborted if the server does not respond in time.
+        //
+        // This prevents the UI from freezing when the network is slow
+        // or the connection is interrupted.
+        //
+        // fetchAPI (below) already provides its own AbortSignal, so
+        // this override respects it and does not add a second one.
+        // ============================================================
+
+        const __originalFetch = window.fetch.bind(window);
+        const __GLOBAL_FETCH_TIMEOUT_MS = 8000;
+
+        window.fetch = function (url, options = {}) {
+            // If a signal was already provided, respect it and do not override.
+            if (options.signal) {
+                return __originalFetch(url, options);
+            }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), __GLOBAL_FETCH_TIMEOUT_MS);
+
+            return __originalFetch(url, {
+                ...options,
+                signal: controller.signal
+            }).finally(() => clearTimeout(timeoutId));
+        };
+
+        // ============================================================
+        // ERROR CLASSIFIER (for fetch failures)
+        // ============================================================
+        //
+        // Given an error object (from fetch or response.json()),
+        // returns a friendly message and a stable name.
+        // All messages are in simple English.
+        // ============================================================
+
+        function __classifyFetchError(error, response) {
+            // 1) HTTP error responses
+            if (response) {
+                if (response.status >= 500) {
+                    return {
+                        name: 'ServerError',
+                        message: 'Server is temporarily unavailable. Please try again in a moment.'
+                    };
+                }
+                if (response.status === 401 || response.status === 403) {
+                    return {
+                        name: 'AuthError',
+                        message: 'Your session has expired. Please close and reopen the app.'
+                    };
+                }
+                if (response.status === 404) {
+                    return {
+                        name: 'NotFoundError',
+                        message: 'The requested item was not found.'
+                    };
+                }
+                if (response.status >= 400) {
+                    return {
+                        name: 'RequestError',
+                        message: 'The request could not be completed. Please try again.'
+                    };
+                }
+            }
+
+            // 2) Timeout
+            if (error && error.name === 'AbortError') {
+                return {
+                    name: 'TimeoutError',
+                    message: 'Connection is slow. Please try again.'
+                };
+            }
+
+            // 3) Offline
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                return {
+                    name: 'OfflineError',
+                    message: 'No internet connection. Please check your connection and try again.'
+                };
+            }
+
+            // 4) Network / unreachable (TypeError from fetch)
+            if (error && error.name === 'TypeError') {
+                return {
+                    name: 'NetworkError',
+                    message: 'Cannot reach Telegram servers. Please check your connection and try again.'
+                };
+            }
+
+            // 5) Fallback
+            return {
+                name: 'UnknownError',
+                message: 'Something went wrong. Please try again.'
+            };
+        }
+
+        // ============================================================
+        // BUSY BUTTON HELPER
+        // ============================================================
+        //
+        // Temporarily disables a button while an async action runs,
+        // to prevent double clicks and duplicate requests.
+        //
+        // Usage:
+        //   const restore = __busyButton(btn, 'Sending...');
+        //   try { ... } finally { restore(); }
+        // ============================================================
+
+        function __busyButton(buttonEl, loadingText) {
+            if (!buttonEl) return function() {};
+
+            const originalText = buttonEl.textContent;
+            const originalDisabled = buttonEl.disabled;
+
+            buttonEl.disabled = true;
+            if (loadingText) buttonEl.textContent = loadingText;
+
+            return function restore() {
+                buttonEl.disabled = originalDisabled;
+                buttonEl.textContent = originalText;
+            };
+        }
+
+        // Optional: find the button that triggered the current click
+        // using the global event object (works with inline onclick).
+        function __clickedButton() {
+            try {
+                const ev = window.event;
+                if (ev && ev.target && ev.target.tagName === 'BUTTON') {
+                    return ev.target;
+                }
+                if (ev && ev.target && ev.target.closest) {
+                    const btn = ev.target.closest('button');
+                    if (btn) return btn;
+                }
+            } catch (e) { /* ignore */ }
+            return null;
+        }
 
         async function fetchAPI(endpoint, options = {}) {
+            // Timeout configuration
+            const TIMEOUT_MS = 8000;  // 8 seconds
+
+            // Create a controller so we can abort the fetch on timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+            let response = null;
+
             try {
-                const response = await fetch(endpoint, {
+                response = await fetch(endpoint, {
                     ...options,
+                    signal: controller.signal,
                     headers: {
                         ...options.headers,
                         'X-Telegram-Init-Data': telegram?.initData || ''
                     }
                 });
+                clearTimeout(timeoutId);
+
+                // If the server returned an HTTP error, classify it.
+                if (!response.ok) {
+                    const classified = __classifyFetchError(null, response);
+                    let serverMessage = null;
+                    try {
+                        const errBody = await response.json();
+                        if (errBody && errBody.message) serverMessage = errBody.message;
+                    } catch (e) { /* ignore */ }
+
+                    const err = new Error(serverMessage || classified.message);
+                    err.name = classified.name;
+                    showError(serverMessage || classified.message);
+                    throw err;
+                }
+
                 const data = await response.json();
                 if (data.status !== 'success') {
-                    showError('API Error: ' + (data.message || 'Unknown error'));
+                    const msg = data.message || 'Unknown error';
+                    showError('API Error: ' + msg);
                 }
                 return data;
             } catch (error) {
-                showError('Network Error: ' + error.message);
-                throw error;
+                clearTimeout(timeoutId);
+
+                // If we already classified it (thrown above), rethrow as-is
+                if (error.name === 'ServerError' || error.name === 'AuthError' ||
+                    error.name === 'NotFoundError' || error.name === 'RequestError') {
+                    throw error;
+                }
+
+                // Otherwise classify it here (timeout, network, offline, unknown)
+                const classified = __classifyFetchError(error, response);
+                const finalError = new Error(classified.message);
+                finalError.name = classified.name;
+                showError(classified.message);
+                throw finalError;
             }
         }
+                
 
         // ============================================================
         // GLOBAL ERROR LOGGING (client -> server)
@@ -3439,12 +3624,55 @@
             } catch (error) { showError('Unable to start.'); }
         }
 
-        function showError(message) {
+        // ============================================================
+        // ERROR DISPLAY (friendly, actionable)
+        // ============================================================
+        //
+        // showError(message, retryFn?)
+        //   - message:  the main error text (English, simple)
+        //   - retryFn:  optional function to call when the user
+        //               taps "Try Again". If not provided, the app
+        //               falls back to startApp().
+        //
+        // The page always shows:
+        //   - an icon based on the message content
+        //   - the error text
+        //   - a "Try Again" button
+        //   - (for teachers) a "Back to Dashboard" button
+        // ============================================================
+
+        function showError(message, retryFn) {
+            const msg = String(message || 'Something went wrong.');
+
+            // Pick a matching icon
+            let icon = '⚠️';
+            if (msg.toLowerCase().indexOf('slow') !== -1) icon = '⏱';
+            else if (msg.toLowerCase().indexOf('internet') !== -1) icon = '📵';
+            else if (msg.toLowerCase().indexOf('telegram servers') !== -1) icon = '📵';
+            else if (msg.toLowerCase().indexOf('session has expired') !== -1) icon = '🔒';
+            else if (msg.toLowerCase().indexOf('unavailable') !== -1) icon = '⏳';
+
+            // Prepare retry callback
+            const retryAction = (typeof retryFn === 'function')
+                ? 'window.__lastRetryFn()'
+                : 'startApp()';
+
+            // Store the retry function globally so the inline onclick can find it
+            window.__lastRetryFn = (typeof retryFn === 'function') ? retryFn : startApp;
+
+            // Show "Back to Dashboard" only for teachers
+            const isTeacher = USER_DATA && USER_DATA.is_teacher;
+            const backBtn = isTeacher
+                ? `<button class="academic-secondary-btn" style="margin-top: 8px; width: 100%;" onclick="renderDashboard(USER_DATA)">← Back to Dashboard</button>`
+                : '';
+
             document.querySelector('.exam-card').innerHTML = `
-                <div style="text-align: center; padding: 40px 20px;">
-                    <h1 style="color: #fca5a5; font-size: 18px;">Error</h1>
-                    <p style="color: #9ca3af; font-size: 14px;">${message}</p>
-                    <button class="academic-primary-btn" style="margin-top: 20px;" onclick="startApp()">Try Again</button>
+                <div style="text-align: center; padding: 40px 24px;">
+                    <div style="font-size: 56px; margin-bottom: 12px;">${icon}</div>
+                    <h1 style="color: #fca5a5; font-size: 18px; margin: 0 0 12px 0;">Connection problem</h1>
+                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 24px 0; line-height: 1.5;">${escapeHtml(msg)}</p>
+                    <button class="academic-primary-btn" style="width: 100%;" onclick="${retryAction}">🔄 Try Again</button>
+                    ${backBtn}
                 </div>
             `;
         }
