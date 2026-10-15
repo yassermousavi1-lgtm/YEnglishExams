@@ -3677,29 +3677,7 @@
             `;
         }
 
-        // ============================================================
-        // SERVICE WORKER REGISTRATION
-        // ============================================================
-        //
-        // Register a Service Worker to cache static files.
-        // This makes the Mini App load faster and work even when
-        // the network is slow.
-        //
-        // Silently ignored if the browser does not support it.
-        // ============================================================
-
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function () {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(function (reg) {
-                        // Registration succeeded (silent)
-                    })
-                    .catch(function (err) {
-                        // Registration failed — ignore, app still works
-                        console.warn('SW registration failed:', err);
-                    });
-            });
-        }
+     
 
         startApp();
     </script>
