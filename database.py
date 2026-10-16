@@ -244,6 +244,30 @@ def run_migrations(connection):
     except sqlite3.OperationalError:
         pass
 
+    # --------------------------------------------------------
+    # Migration 11: create listening_audio table
+    #
+    # Stores the Telegram file_id for each listening exam's audio.
+    # The actual audio file lives in a Telegram channel; only the
+    # file_id is kept here. The Flask server uses it to stream the
+    # audio to authorized students.
+    # --------------------------------------------------------
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS listening_audio (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exam_id INTEGER NOT NULL,
+                telegram_file_id TEXT NOT NULL,
+                mime_type TEXT DEFAULT 'audio/mpeg',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (exam_id)
+                    REFERENCES exams(id)
+                    ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
 
 def _assign_missing_colors(cursor):
     """Assign palette colors to students that don't have a color yet."""

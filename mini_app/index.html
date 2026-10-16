@@ -2413,6 +2413,8 @@
   ],
   "extra_word": "ancient"
 }`;
+        let fetchedAudioFileId = null;
+        let fetchedAudioMimeType = null;
 
         let selectedExamType = 'mcq';
 
@@ -2426,33 +2428,91 @@
             renderCreateExamForm();
         }
 
+        async function fetchLatestAudio() {
+            const statusEl = document.getElementById('audioFetchStatus');
+            const resultEl = document.getElementById('audioFetchResult');
+            if (!statusEl || !resultEl) return;
+            statusEl.textContent = 'Fetching...';
+            resultEl.style.display = 'none';
+            fetchedAudioFileId = null;
+            fetchedAudioMimeType = null;
+
+            try {
+                const response = await fetch('/api/teacher/listening/fetch_file_id', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': telegram?.initData || ''
+                    },
+                    body: JSON.stringify({})
+                });
+                const data = await response.json();
+                if (data.status !== 'success') {
+                    statusEl.textContent = '❌ ' + (data.message || 'Failed.');
+                    return;
+                }
+                fetchedAudioFileId = data.file_id;
+                fetchedAudioMimeType = data.mime_type || 'audio/mpeg';
+                const sizeKb = data.file_size ? Math.round(data.file_size / 1024) : 0;
+                statusEl.textContent = '✅ Audio found.';
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `
+                    <div style="color: #34d399; font-size: 13px; margin-bottom: 4px;">✔ ${escapeHtml(data.file_name || 'audio')}</div>
+                    <div style="color: #6b7280; font-size: 11px; word-break: break-all;">${escapeHtml(fetchedAudioFileId)}</div>
+                    ${sizeKb ? `<div style="color: #6b7280; font-size: 11px; margin-top: 2px;">${sizeKb} KB</div>` : ''}
+                    <div style="color: #6b7280; font-size: 11px; margin-top: 2px;">Channel: ${escapeHtml(data.chat_username || 'unknown')}</div>
+                `;
+            } catch (error) {
+                statusEl.textContent = '❌ Error: ' + (error.message || 'Unknown');
+            }
+        }
         function renderCreateExamForm() {
-            const isWordBank = selectedExamType === 'word_bank';
-            const placeholder = isWordBank ? WORD_BANK_TEMPLATE : MCQ_TEMPLATE;
-            const instructionText = isWordBank
-                ? 'Paste a single Word Bank object (not an array). 11 words, 10 sentences, 1 extra word.'
-                : 'Paste an array of MCQ questions.';
+                        const placeholder = (selectedExamType === 'word_bank') ? WORD_BANK_TEMPLATE : MCQ_TEMPLATE;
+             let instructionText;
+            if (selectedExamType === 'word_bank') {
+                instructionText = 'Paste a single Word Bank object (not an array). 11 words, 10 sentences, 1 extra word.';
+            } else if (selectedExamType === 'listening') {
+                instructionText = 'First fetch the audio from your channel, then paste an array of MCQ questions.';
+            } else {
+                instructionText = 'Paste an array of MCQ questions.';
+            }          
 
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
                     ${academicHeader('Create Exam', 'renderDashboard(USER_DATA)')}
                     
-                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
                         <button 
                             class="academic-filter-btn ${selectedExamType === 'mcq' ? 'active' : ''}"
                             onclick="selectExamType('mcq')"
-                            style="flex: 1; padding: 12px;"
+                            style="flex: 1; padding: 12px; min-width: 100px;"
                         >
-                            ✅ MCQ (4 Options)
+                            ✅ MCQ
                         </button>
                         <button 
                             class="academic-filter-btn ${selectedExamType === 'word_bank' ? 'active' : ''}"
                             onclick="selectExamType('word_bank')"
-                            style="flex: 1; padding: 12px;"
+                            style="flex: 1; padding: 12px; min-width: 100px;"
                         >
                             📝 Word Bank
                         </button>
+                        <button 
+                            class="academic-filter-btn ${selectedExamType === 'listening' ? 'active' : ''}"
+                            onclick="selectExamType('listening')"
+                            style="flex: 1; padding: 12px; min-width: 100px;"
+                        >
+                            🎧 Listening
+                        </button>
                     </div>
+
+                    ${selectedExamType === 'listening' ? `
+                        <div style="background: #111827; border: 1px solid #374151; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                            <div style="color: #60a5fa; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">🎧 Audio</div>
+                            <button class="academic-secondary-btn" style="width: 100%;" onclick="fetchLatestAudio()">📥 Fetch Last Audio from Channel</button>
+                            <div id="audioFetchStatus" style="margin-top: 10px; color: #9ca3af; font-size: 12px; text-align: center;"></div>
+                            <div id="audioFetchResult" style="display: none; margin-top: 10px;"></div>
+                        </div>
+                    ` : ''}
 
                     <p style="color: #9ca3af; font-size: 13px; margin: 0 0 12px 0;">${instructionText}</p>
 

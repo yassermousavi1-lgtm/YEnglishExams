@@ -227,6 +227,23 @@ def get_database_connection():
         connection.commit()
     except sqlite3.OperationalError:
         pass
+
+    # listening_audio table — Telegram file_id for listening exams
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS listening_audio (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exam_id INTEGER NOT NULL,
+                telegram_file_id TEXT NOT NULL,
+                mime_type TEXT DEFAULT 'audio/mpeg',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
+            )
+        """)
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
     return connection
 
 
@@ -915,6 +932,41 @@ def get_exam_questions(exam_id):
                 "word_bank_questions": word_bank_questions,
                 "total_questions": total_questions
             })
+        # ---------------- Listening ----------------
+        if exam_type == "listening":
+            cursor.execute("""
+                SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, eq.question_order
+                FROM exam_questions AS eq
+                INNER JOIN questions AS q ON q.id = eq.question_id
+                WHERE eq.exam_id = ?
+                ORDER BY eq.question_order ASC
+            """, (exam_id,))
+            questions = cursor.fetchall()
+            question_list = []
+            for question in questions:
+                options = {}
+                if question["option_a"]: options["A"] = question["option_a"]
+                if question["option_b"]: options["B"] = question["option_b"]
+                if question["option_c"]: options["C"] = question["option_c"]
+                if question["option_d"]: options["D"] = question["option_d"]
+                question_list.append({
+                    "id": question["id"],
+                    "question_text": question["question_text"],
+                    "options": options,
+                    "question_order": question["question_order"]
+                })
+            return jsonify({
+                "status": "success",
+                "exam": {
+                    "id": exam["id"],
+                    "title": exam["title"],
+                    "time_limit": exam["time_limit"],
+                    "exam_type": "listening",
+                    "audio_url": f"/api/listening/audio/{exam_id}"
+                },
+                "questions": question_list,
+                "total_questions": len(question_list)
+            })
 
         # ---------------- MCQ (existing behavior) ----------------
         cursor.execute("""
@@ -1008,6 +1060,7 @@ def teacher_preview_exam(exam_id):
                 "word_bank_questions": word_bank_questions,
                 "total_questions": len(word_bank_questions)
             })
+      
 
         # ---------------- MCQ ----------------
         cursor.execute("""
@@ -1119,6 +1172,43 @@ def teacher_preview_exam_with_answers(exam_id):
                 },
                 "word_bank_questions": word_bank_questions,
                 "total_questions": len(word_bank_questions)
+            })
+        # ---------------- Listening ----------------
+        if exam_type == "listening":
+            cursor.execute("""
+                SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
+                       q.correct_answer, eq.question_order
+                FROM exam_questions AS eq
+                INNER JOIN questions AS q ON q.id = eq.question_id
+                WHERE eq.exam_id = ?
+                ORDER BY eq.question_order ASC
+            """, (exam_id,))
+            questions = cursor.fetchall()
+            question_list = []
+            for question in questions:
+                options = {}
+                if question["option_a"]: options["A"] = question["option_a"]
+                if question["option_b"]: options["B"] = question["option_b"]
+                if question["option_c"]: options["C"] = question["option_c"]
+                if question["option_d"]: options["D"] = question["option_d"]
+                question_list.append({
+                    "id": question["id"],
+                    "question_text": question["question_text"],
+                    "options": options,
+                    "question_order": question["question_order"],
+                    "correct_answer": (question["correct_answer"] or "").strip().upper(),
+                })
+            return jsonify({
+                "status": "success",
+                "exam": {
+                    "id": exam["id"],
+                    "title": exam["title"],
+                    "time_limit": exam["time_limit"],
+                    "exam_type": "listening",
+                    "audio_url": f"/api/listening/audio/{exam_id}"
+                },
+                "questions": question_list,
+                "total_questions": len(question_list)
             })
 
         # ---------------- MCQ ----------------
@@ -2283,6 +2373,81 @@ def teacher_create_exam_with_questions():
             return jsonify({"status": "error", "message": "An internal server error occurred."}), 500
         finally:
             connection.close()
+    # --------------------------------------------------------
+    # Listening path
+    # --------------------------------------------------------
+    exam_type_param = (data.get("exam_type") or "").strip().lower()
+    if exam_type_param == "listening":
+        audio_file_id = (data.get("audio_file_id") or "").strip()
+        audio_mime_type = (data.get("audio_mime_type") or "audio/mpeg").strip()
+        questions_data = data.get("questions", [])
+
+        if not audio_file_id:
+            return jsonify({"status": "error", "message": "audio_file_id is required for listening exams."}), 400
+        if not questions_data:
+            return jsonify({"status": "error", "message": "questions are required."}), 400
+
+        connection = get_database_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO exams (title, time_limit, category, exam_type) VALUES (?, ?, ?, ?)",
+                (title, time_limit, category, "listening")
+            )
+            exam_id = cursor.lastrowid
+
+            question_ids = []
+            for q in questions_data:
+                question_text = q.get("question_text", "").strip()
+                option_a = q.get("option_a", "").strip()
+                option_b = q.get("option_b", "").strip()
+                option_c = q.get("option_c", "").strip()
+                option_d = q.get("option_d", "").strip()
+                correct_answer = q.get("correct_answer", "").strip().upper()
+                if not question_text or not correct_answer or correct_answer not in ["A", "B", "C", "D"]:
+                    raise ValueError(f"Invalid question data: {question_text[:50]}...")
+                if correct_answer == "A" and not option_a:
+                    raise ValueError("Correct answer is A but option_a is empty.")
+                if correct_answer == "B" and not option_b:
+                    raise ValueError("Correct answer is B but option_b is empty.")
+                if correct_answer == "C" and not option_c:
+                    raise ValueError("Correct answer is C but option_c is empty.")
+                if correct_answer == "D" and not option_d:
+                    raise ValueError("Correct answer is D but option_d is empty.")
+                cursor.execute(
+                    "INSERT INTO questions (question_text, option_a, option_b, option_c, option_d, correct_answer) VALUES (?, ?, ?, ?, ?, ?)",
+                    (question_text, option_a, option_b, option_c, option_d, correct_answer)
+                )
+                question_ids.append(cursor.lastrowid)
+
+            for order, qid in enumerate(question_ids, start=1):
+                cursor.execute(
+                    "INSERT INTO exam_questions (exam_id, question_id, question_order) VALUES (?, ?, ?)",
+                    (exam_id, qid, order)
+                )
+
+            cursor.execute(
+                "INSERT INTO listening_audio (exam_id, telegram_file_id, mime_type) VALUES (?, ?, ?)",
+                (exam_id, audio_file_id, audio_mime_type)
+            )
+
+            connection.commit()
+            return jsonify({
+                "status": "success",
+                "message": "Listening exam created successfully.",
+                "exam_id": exam_id,
+                "exam_type": "listening",
+                "total_questions": len(question_ids)
+            })
+        except ValueError as error:
+            connection.rollback()
+            return jsonify({"status": "error", "message": str(error)}), 400
+        except Exception as error:
+            connection.rollback()
+            print("LISTENING CREATE ERROR:", error)
+            return jsonify({"status": "error", "message": "An internal server error occurred."}), 500
+        finally:
+            connection.close()
 
     # --------------------------------------------------------
     # MCQ path (existing behavior)
@@ -2933,6 +3098,178 @@ def teacher_delete_makeup_session(makeup_id):
     finally:
         connection.close()
 
+
+# ============================================================
+# LISTENING — audio file_id fetch + audio streaming
+# ============================================================
+
+@app.route("/api/teacher/listening/fetch_file_id", methods=["POST"])
+def teacher_listening_fetch_file_id():
+    """
+    Fetch the last audio file posted in the teacher's private
+    audio channel. Returns the Telegram file_id so the teacher
+    can attach it to a listening exam.
+
+    Teacher-only. Uses getUpdates with offset=-20 to inspect the
+    last 20 updates, then picks the most recent channel_post that
+    contains audio/voice/document(audio).
+    """
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+    if not is_teacher(telegram_user["id"]):
+        return jsonify({"status": "error", "message": "Access denied."}), 403
+
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({"status": "error", "message": "Bot token is not configured."}), 500
+
+    data = request.get_json(silent=True) or {}
+    channel_username = (data.get("channel_username") or "").strip()
+    if channel_username and not channel_username.startswith("@"):
+        channel_username = "@" + channel_username
+
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+        params = {"offset": -20}
+        resp = requests.get(url, params=params, timeout=20)
+        if not resp.ok:
+            return jsonify({"status": "error", "message": "Telegram API error (HTTP " + str(resp.status_code) + ")."}), 500
+
+        tg_data = resp.json()
+        if not tg_data.get("ok"):
+            return jsonify({"status": "error", "message": "Telegram refused: " + str(tg_data.get("description", "unknown"))}), 500
+
+        updates = tg_data.get("result", [])
+        if not updates:
+            return jsonify({"status": "error", "message": "No recent updates found. Please send the audio file to your private channel first."}), 404
+
+        chosen = None
+        # Walk newest -> oldest
+        for upd in reversed(updates):
+            post = upd.get("channel_post")
+            if not post:
+                continue
+            chat = post.get("chat", {})
+            chat_username = chat.get("username")
+            if channel_username and chat_username:
+                if ("@" + chat_username).lower() != channel_username.lower():
+                    continue
+
+            audio = post.get("audio")
+            voice = post.get("voice")
+            document = post.get("document")
+
+            file_id = None
+            mime_type = None
+            file_name = None
+            file_size = None
+
+            if audio:
+                file_id = audio.get("file_id")
+                mime_type = audio.get("mime_type", "audio/mpeg")
+                file_name = audio.get("file_name") or "audio"
+                file_size = audio.get("file_size") or 0
+            elif voice:
+                file_id = voice.get("file_id")
+                mime_type = voice.get("mime_type", "audio/ogg")
+                file_name = "voice_message"
+                file_size = voice.get("file_size") or 0
+            elif document:
+                doc_mime = (document.get("mime_type") or "")
+                if doc_mime.startswith("audio/"):
+                    file_id = document.get("file_id")
+                    mime_type = doc_mime
+                    file_name = document.get("file_name") or "audio"
+                    file_size = document.get("file_size") or 0
+
+            if file_id:
+                chosen = {
+                    "file_id": file_id,
+                    "mime_type": mime_type or "audio/mpeg",
+                    "file_name": file_name or "audio",
+                    "file_size": file_size or 0,
+                    "chat_username": chat_username,
+                }
+                break
+
+        if not chosen:
+            return jsonify({"status": "error", "message": "No audio found in the last 20 updates. Please send the audio file to your channel, then try again immediately."}), 404
+
+        return jsonify({"status": "success", **chosen})
+
+    except requests.exceptions.Timeout:
+        return jsonify({"status": "error", "message": "Telegram did not respond in time."}), 504
+    except Exception as e:
+        print("FETCH FILE ID ERROR:", e)
+        return jsonify({"status": "error", "message": "Server error."}), 500
+
+
+@app.route("/api/listening/audio/<int:exam_id>")
+def get_listening_audio(exam_id):
+    """
+    Stream the listening audio for the given exam to an authorized
+    student. The Telegram bot token stays on the server.
+    """
+    auth_result = get_authenticated_user()
+    if not auth_result["valid"]:
+        return jsonify({"status": "error", "message": auth_result["message"]}), 401
+    telegram_user = auth_result["user"]
+
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({"status": "error", "message": "Bot token is not configured."}), 500
+
+    connection = get_database_connection()
+    try:
+        student = find_student_by_telegram_id(telegram_user["id"], connection)
+        if student is None:
+            return jsonify({"status": "error", "message": "Student account is not registered."}), 403
+        if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
+            return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
+
+        cursor = connection.cursor()
+        cursor.execute("SELECT telegram_file_id, mime_type FROM listening_audio WHERE exam_id = ? LIMIT 1", (exam_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"status": "error", "message": "Audio not found for this exam."}), 404
+
+        file_id = row["telegram_file_id"]
+        mime_type = row["mime_type"] or "audio/mpeg"
+
+        # 1) Get file path from Telegram
+        get_file_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile"
+        gf = requests.get(get_file_url, params={"file_id": file_id}, timeout=20)
+        if not gf.ok:
+            return jsonify({"status": "error", "message": "Could not get audio info from Telegram."}), 500
+        gj = gf.json()
+        if not gj.get("ok"):
+            return jsonify({"status": "error", "message": "Telegram refused the file request."}), 500
+
+        file_path = gj["result"]["file_path"]
+
+        # 2) Download the file bytes
+        download_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+        fr = requests.get(download_url, timeout=60)
+        if not fr.ok:
+            return jsonify({"status": "error", "message": "Failed to download audio from Telegram."}), 500
+
+        # 3) Stream to client
+        from flask import Response
+        return Response(
+            fr.content,
+            mimetype=mime_type,
+            headers={
+                "Content-Disposition": f'inline; filename="exam_{exam_id}.mp3"',
+                "Cache-Control": "private, max-age=3600",
+            }
+        )
+    except requests.exceptions.Timeout:
+        return jsonify({"status": "error", "message": "Telegram did not respond in time."}), 504
+    except Exception as e:
+        print("AUDIO STREAM ERROR:", e)
+        return jsonify({"status": "error", "message": "Server error."}), 500
+    finally:
+        connection.close()
 
 @app.route("/api/teacher/schedule", methods=["POST"])
 def teacher_add_schedule():
