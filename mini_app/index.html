@@ -2472,59 +2472,41 @@
                 statusEl.textContent = '❌ Error: ' + (error.message || 'Unknown');
             }
         }
+
         function renderCreateExamForm() {
-                        const placeholder = (selectedExamType === 'word_bank') ? WORD_BANK_TEMPLATE : MCQ_TEMPLATE;
-             let instructionText;
+            // For Listening, show ONLY a single JSON textarea (everything from JSON).
+            // For MCQ/Word Bank, keep the existing 3-field form.
+            if (selectedExamType === 'listening') {
+                renderListeningCreateForm();
+                return;
+            }
+
+            const placeholder = (selectedExamType === 'word_bank') ? WORD_BANK_TEMPLATE : MCQ_TEMPLATE;
+            let instructionText;
             if (selectedExamType === 'word_bank') {
                 instructionText = 'Paste a single Word Bank object (not an array). 11 words, 10 sentences, 1 extra word.';
-            } else if (selectedExamType === 'listening') {
-                instructionText = 'First fetch the audio from your channel, then paste an array of MCQ questions.';
             } else {
                 instructionText = 'Paste an array of MCQ questions.';
-            }          
+            }
 
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 20px;">
                     ${academicHeader('Create Exam', 'renderDashboard(USER_DATA)')}
-                    
-                    <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
-                        <button 
-                            class="academic-filter-btn ${selectedExamType === 'mcq' ? 'active' : ''}"
-                            onclick="selectExamType('mcq')"
-                            style="flex: 1; padding: 12px; min-width: 100px;"
-                        >
-                            ✅ MCQ
-                        </button>
-                        <button 
-                            class="academic-filter-btn ${selectedExamType === 'word_bank' ? 'active' : ''}"
-                            onclick="selectExamType('word_bank')"
-                            style="flex: 1; padding: 12px; min-width: 100px;"
-                        >
-                            📝 Word Bank
-                        </button>
-                        <button 
-                            class="academic-filter-btn ${selectedExamType === 'listening' ? 'active' : ''}"
-                            onclick="selectExamType('listening')"
-                            style="flex: 1; padding: 12px; min-width: 100px;"
-                        >
-                            🎧 Listening
-                        </button>
-                    </div>
 
-                    ${selectedExamType === 'listening' ? `
-                        <div style="background: #111827; border: 1px solid #374151; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                            <div style="color: #60a5fa; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">🎧 Audio</div>
-                            <button class="academic-secondary-btn" style="width: 100%;" onclick="fetchLatestAudio()">📥 Fetch Last Audio from Channel</button>
-                            <div id="audioFetchStatus" style="margin-top: 10px; color: #9ca3af; font-size: 12px; text-align: center;"></div>
-                            <div id="audioFetchResult" style="display: none; margin-top: 10px;"></div>
-                        </div>
-                    ` : ''}
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+                        <button class="academic-filter-btn ${selectedExamType === 'mcq' ? 'active' : ''}"
+                            onclick="selectExamType('mcq')" style="flex: 1; padding: 12px; min-width: 100px;">✅ MCQ</button>
+                        <button class="academic-filter-btn ${selectedExamType === 'word_bank' ? 'active' : ''}"
+                            onclick="selectExamType('word_bank')" style="flex: 1; padding: 12px; min-width: 100px;">📝 Word Bank</button>
+                        <button class="academic-filter-btn ${selectedExamType === 'listening' ? 'active' : ''}"
+                            onclick="selectExamType('listening')" style="flex: 1; padding: 12px; min-width: 100px;">🎧 Listening</button>
+                    </div>
 
                     <p style="color: #9ca3af; font-size: 13px; margin: 0 0 12px 0;">${instructionText}</p>
 
                     <div style="display: flex; flex-direction: column; gap: 12px;">
                         <input id="examTitle" type="text" placeholder="Exam Title" class="academic-input">
-                        <input id="examCategory" type="text" placeholder="Category (e.g. Book Name, Topic)" class="academic-input">
+                        <input id="examCategory" type="text" placeholder="Category" class="academic-input">
                         <input id="examTimeLimit" type="number" placeholder="Total Time (minutes)" class="academic-input">
                         <textarea id="examQuestionsJson" rows="14" placeholder="${placeholder.replace(/"/g, '&quot;')}" class="academic-input" style="font-family: monospace; direction: ltr; resize: vertical;"></textarea>
                         <button class="academic-primary-btn" onclick="createExamWithJson()">Create Exam</button>
@@ -2534,7 +2516,122 @@
             `;
         }
 
+        function renderListeningCreateForm() {
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 20px;">
+                    ${academicHeader('Create Listening Exam', 'renderDashboard(USER_DATA)')}
+
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+                        <button class="academic-filter-btn ${selectedExamType === 'mcq' ? 'active' : ''}"
+                            onclick="selectExamType('mcq')" style="flex: 1; padding: 12px; min-width: 100px;">✅ MCQ</button>
+                        <button class="academic-filter-btn ${selectedExamType === 'word_bank' ? 'active' : ''}"
+                            onclick="selectExamType('word_bank')" style="flex: 1; padding: 12px; min-width: 100px;">📝 Word Bank</button>
+                        <button class="academic-filter-btn ${selectedExamType === 'listening' ? 'active' : ''}"
+                            onclick="selectExamType('listening')" style="flex: 1; padding: 12px; min-width: 100px;">🎧 Listening</button>
+                    </div>
+
+                    <div style="background: #111827; border: 1px solid #374151; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                        <div style="color: #60a5fa; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">🎧 Audio</div>
+                        <button class="academic-secondary-btn" style="width: 100%;" onclick="fetchLatestAudio()">📥 Fetch Last Audio from Channel</button>
+                        <div id="audioFetchStatus" style="margin-top: 10px; color: #9ca3af; font-size: 12px; text-align: center;"></div>
+                        <div id="audioFetchResult" style="display: none; margin-top: 10px;"></div>
+                    </div>
+
+                    <p style="color: #9ca3af; font-size: 13px; margin: 0 0 8px 0;">
+                        Paste a single JSON object with all fields (title, category, time_limit, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, multiple_choice, matching).
+                    </p>
+
+                    <textarea id="examQuestionsJson" rows="18" class="academic-input"
+                        style="font-family: monospace; direction: ltr; resize: vertical;"
+                        placeholder='{"title":"...","category":"...","time_limit":10,"reading_1_duration":15,"reading_1_content":"...","reading_2_duration":20,"reading_2_content":"...","multiple_choice":[...],"matching":{...}}'></textarea>
+
+                    <button class="academic-primary-btn" style="width: 100%; margin-top: 12px;" onclick="createListeningExam()">
+                        Create Listening Exam
+                    </button>
+                    <div id="createExamStatus" style="margin-top: 12px; color: #9ca3af;"></div>
+                </div>
+            `;
+        }
+
+        async function createListeningExam() {
+            const statusEl = document.getElementById('createExamStatus');
+            const raw = (document.getElementById('examQuestionsJson').value || '').trim();
+
+            if (!fetchedAudioFileId) {
+                statusEl.textContent = '⚠️ Please fetch the audio first.';
+                return;
+            }
+            if (!raw) {
+                statusEl.textContent = '⚠️ Please paste the JSON.';
+                return;
+            }
+
+            let payload;
+            try {
+                payload = JSON.parse(raw);
+            } catch (e) {
+                statusEl.textContent = '⚠️ Invalid JSON format.';
+                return;
+            }
+            if (Array.isArray(payload)) {
+                statusEl.textContent = '⚠️ JSON must be an object, not an array.';
+                return;
+            }
+
+            const title = (payload.title || '').toString().trim();
+            const category = (payload.category || 'Uncategorized').toString().trim();
+            const time_limit = parseInt(payload.time_limit);
+            if (!title || !time_limit) {
+                statusEl.textContent = '⚠️ JSON must contain "title" and "time_limit".';
+                return;
+            }
+
+            const mcq = payload.multiple_choice || payload.questions || [];
+            if (!Array.isArray(mcq) || mcq.length === 0) {
+                statusEl.textContent = '⚠️ "multiple_choice" must be a non-empty array.';
+                return;
+            }
+
+            statusEl.textContent = 'Creating exam...';
+
+            try {
+                const response = await fetch('/api/teacher/exams_with_questions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify({
+                        title: title,
+                        category: category,
+                        time_limit: time_limit,
+                        exam_type: 'listening',
+                        audio_file_id: fetchedAudioFileId,
+                        audio_mime_type: fetchedAudioMimeType || 'audio/mpeg',
+                        questions: mcq,
+                        reading_1_duration: payload.reading_1_duration || 30,
+                        reading_1_content: payload.reading_1_content || '',
+                        reading_2_duration: payload.reading_2_duration || 60,
+                        reading_2_content: payload.reading_2_content || '',
+                        matching: payload.matching || null
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    statusEl.textContent = '✅ Listening exam created! (ID: ' + data.exam_id + ')';
+                    fetchedAudioFileId = null;
+                    fetchedAudioMimeType = null;
+                    setTimeout(() => renderListeningCreateForm(), 2000);
+                } else {
+                    statusEl.textContent = '❌ ' + (data.message || 'Failed.');
+                }
+            } catch (e) {
+                statusEl.textContent = '❌ Error: ' + (e.message || 'Unknown');
+            }
+        }
         async function createExamWithJson() {
+
+            if (selectedExamType === 'listening') {
+                await createListeningExam();
+                return;
+            }
             const title = document.getElementById('examTitle').value.trim();
             const category = document.getElementById('examCategory').value.trim();
             const timeLimit = document.getElementById('examTimeLimit').value.trim();
