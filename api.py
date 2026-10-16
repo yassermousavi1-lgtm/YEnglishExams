@@ -244,6 +244,36 @@ def get_database_connection():
     except sqlite3.OperationalError:
         pass
 
+    # listening_audio — new columns
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_1_duration INTEGER DEFAULT 30")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_1_content TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_2_duration INTEGER DEFAULT 60")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_2_content TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN matching_json TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
     return connection
 
 
@@ -550,6 +580,40 @@ def send_result_to_teacher(student, exam, score, total_questions, completed_at):
     except Exception as error:
         print("Teacher notification error:", error)
         return False
+
+def grade_matching_submission(matching_data, submitted_matches):
+    """
+    Grade the matching section.
+    matching_data: {"items": [...], "options": [...]}
+    submitted_matches: { item_id: option_id }
+    Returns (score, total, details).
+    """
+    if not matching_data or not isinstance(matching_data, dict):
+        return 0, 0, []
+    items = matching_data.get("items") or []
+    if not items:
+        return 0, 0, []
+    if not isinstance(submitted_matches, dict):
+        submitted_matches = {}
+    score = 0
+    total = 0
+    details = []
+    for item in items:
+        item_id = str(item.get("id") or "")
+        correct = str(item.get("correct_option_id") or "")
+        submitted = str(submitted_matches.get(item_id) or "")
+        is_correct = (submitted != "" and submitted == correct)
+        if is_correct:
+            score += 1
+        total += 1
+        details.append({
+            "item_id": item_id,
+            "item_text": item.get("text", ""),
+            "submitted": submitted,
+            "correct": correct,
+            "is_correct": is_correct
+        })
+    return score, total, details
 
 
 # ============================================================
@@ -934,6 +998,17 @@ def get_exam_questions(exam_id):
             })
         # ---------------- Listening ----------------
         if exam_type == "listening":
+            cursor.execute("SELECT reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json FROM listening_audio WHERE exam_id = ? LIMIT 1", (exam_id,))
+            la = cursor.fetchone()
+            reading_1_duration = (la["reading_1_duration"] if la and la["reading_1_duration"] else 30)
+            reading_1_content = (la["reading_1_content"] if la and la["reading_1_content"] else "")
+            reading_2_duration = (la["reading_2_duration"] if la and la["reading_2_duration"] else 60)
+            reading_2_content = (la["reading_2_content"] if la and la["reading_2_content"] else "")
+            matching_raw = (la["matching_json"] if la and la["matching_json"] else "")
+            try:
+                matching_data = json.loads(matching_raw) if matching_raw else None
+            except Exception:
+                matching_data = None
             cursor.execute("""
                 SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, eq.question_order
                 FROM exam_questions AS eq
@@ -962,11 +1037,16 @@ def get_exam_questions(exam_id):
                     "title": exam["title"],
                     "time_limit": exam["time_limit"],
                     "exam_type": "listening",
-                    "audio_url": f"/api/listening/audio/{exam_id}"
+                    "audio_url": f"/api/listening/audio/{exam_id}",
+                    "reading_1_duration": reading_1_duration,
+                    "reading_1_content": reading_1_content,
+                    "reading_2_duration": reading_2_duration,
+                    "reading_2_content": reading_2_content,
+                    "matching": matching_data
                 },
                 "questions": question_list,
                 "total_questions": len(question_list)
-            })
+            })        
 
         # ---------------- MCQ (existing behavior) ----------------
         cursor.execute("""
@@ -1175,6 +1255,17 @@ def teacher_preview_exam_with_answers(exam_id):
             })
         # ---------------- Listening ----------------
         if exam_type == "listening":
+            cursor.execute("SELECT reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json FROM listening_audio WHERE exam_id = ? LIMIT 1", (exam_id,))
+            la = cursor.fetchone()
+            reading_1_duration = (la["reading_1_duration"] if la and la["reading_1_duration"] else 30)
+            reading_1_content = (la["reading_1_content"] if la and la["reading_1_content"] else "")
+            reading_2_duration = (la["reading_2_duration"] if la and la["reading_2_duration"] else 60)
+            reading_2_content = (la["reading_2_content"] if la and la["reading_2_content"] else "")
+            matching_raw = (la["matching_json"] if la and la["matching_json"] else "")
+            try:
+                matching_data = json.loads(matching_raw) if matching_raw else None
+            except Exception:
+                matching_data = None
             cursor.execute("""
                 SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
                        q.correct_answer, eq.question_order
@@ -1205,11 +1296,16 @@ def teacher_preview_exam_with_answers(exam_id):
                     "title": exam["title"],
                     "time_limit": exam["time_limit"],
                     "exam_type": "listening",
-                    "audio_url": f"/api/listening/audio/{exam_id}"
+                    "audio_url": f"/api/listening/audio/{exam_id}",
+                    "reading_1_duration": reading_1_duration,
+                    "reading_1_content": reading_1_content,
+                    "reading_2_duration": reading_2_duration,
+                    "reading_2_content": reading_2_content,
+                    "matching": matching_data
                 },
                 "questions": question_list,
                 "total_questions": len(question_list)
-            })
+            }) 
 
         # ---------------- MCQ ----------------
         cursor.execute("""
@@ -1365,6 +1461,92 @@ def submit_exam():
                     "total_questions": total_questions,
                     "completed_at": completed_at,
                     "exam_type": "word_bank",
+                    "teacher_notified": True
+                }
+            })
+        # ---------------- Listening submission ----------------
+        if exam_type == "listening":
+            answers = data.get("answers")
+            if not isinstance(answers, dict):
+                answers = {}
+            matching_answers = data.get("matching_answers")
+            if not isinstance(matching_answers, dict):
+                matching_answers = {}
+
+            cursor.execute("""
+                SELECT q.id, q.correct_answer, eq.question_order
+                FROM exam_questions AS eq
+                INNER JOIN questions AS q ON q.id = eq.question_id
+                WHERE eq.exam_id = ?
+                ORDER BY eq.question_order ASC
+            """, (exam_id,))
+            questions = cursor.fetchall()
+            mcq_total = len(questions)
+
+            mcq_score = 0
+            for question in questions:
+                qid = str(question["id"])
+                correct = str(question["correct_answer"]).strip().upper()
+                submitted = answers.get(qid)
+                if submitted is None:
+                    continue
+                if str(submitted).strip().upper() == correct:
+                    mcq_score += 1
+
+            cursor.execute("SELECT matching_json FROM listening_audio WHERE exam_id = ? LIMIT 1", (exam_id,))
+            la = cursor.fetchone()
+            matching_raw = (la["matching_json"] if la and la["matching_json"] else "")
+            try:
+                matching_data = json.loads(matching_raw) if matching_raw else None
+            except Exception:
+                matching_data = None
+
+            match_score, match_total, match_details = grade_matching_submission(matching_data, matching_answers)
+
+            total_score = mcq_score + match_score
+            total_questions = mcq_total + match_total
+            if total_questions == 0:
+                return jsonify({"status": "error", "message": "This exam has no questions."}), 400
+
+            cursor.execute("""
+                INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived, exam_title_snapshot)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            """, (student["id"], exam_id, total_score, total_questions, started_at, completed_at, exam["title"]))
+            result_id = cursor.lastrowid
+
+            for question in questions:
+                qid = str(question["id"])
+                correct = str(question["correct_answer"]).strip().upper()
+                submitted = answers.get(qid)
+                if submitted is None:
+                    sub_val = None
+                    is_correct = False
+                else:
+                    sub_val = str(submitted).strip().upper()
+                    is_correct = (sub_val == correct)
+                cursor.execute("""
+                    INSERT INTO student_answers (result_id, question_id, selected_answer, is_correct)
+                    VALUES (?, ?, ?, ?)
+                """, (result_id, qid, sub_val, is_correct))
+
+            connection.commit()
+            send_result_to_teacher(student, exam, total_score, total_questions, completed_at)
+
+            return jsonify({
+                "status": "success",
+                "message": "Exam submitted successfully.",
+                "result": {
+                    "id": result_id,
+                    "exam_id": exam_id,
+                    "student_id": student["id"],
+                    "score": total_score,
+                    "total_questions": total_questions,
+                    "mcq_score": mcq_score,
+                    "mcq_total": mcq_total,
+                    "matching_score": match_score,
+                    "matching_total": match_total,
+                    "completed_at": completed_at,
+                    "exam_type": "listening",
                     "teacher_notified": True
                 }
             })
@@ -2381,7 +2563,12 @@ def teacher_create_exam_with_questions():
         audio_file_id = (data.get("audio_file_id") or "").strip()
         audio_mime_type = (data.get("audio_mime_type") or "audio/mpeg").strip()
         questions_data = data.get("questions", [])
-
+        reading_1_duration = int(data.get("reading_1_duration") or 30)
+        reading_1_content = (data.get("reading_1_content") or "").strip()
+        reading_2_duration = int(data.get("reading_2_duration") or 60)
+        reading_2_content = (data.get("reading_2_content") or "").strip()
+        matching_payload = data.get("matching")
+        matching_json_str = json.dumps(matching_payload) if matching_payload else ""
         if not audio_file_id:
             return jsonify({"status": "error", "message": "audio_file_id is required for listening exams."}), 400
         if not questions_data:
@@ -2425,11 +2612,11 @@ def teacher_create_exam_with_questions():
                     "INSERT INTO exam_questions (exam_id, question_id, question_order) VALUES (?, ?, ?)",
                     (exam_id, qid, order)
                 )
-
             cursor.execute(
-                "INSERT INTO listening_audio (exam_id, telegram_file_id, mime_type) VALUES (?, ?, ?)",
-                (exam_id, audio_file_id, audio_mime_type)
+                "INSERT INTO listening_audio (exam_id, telegram_file_id, mime_type, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (exam_id, audio_file_id, audio_mime_type, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json_str)
             )
+            
 
             connection.commit()
             return jsonify({

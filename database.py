@@ -269,6 +269,38 @@ def run_migrations(connection):
     except sqlite3.OperationalError:
         pass
 
+    # --------------------------------------------------------
+    # Migration 12: extend listening_audio with reading + matching
+    # --------------------------------------------------------
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_1_duration INTEGER DEFAULT 30")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_1_content TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_2_duration INTEGER DEFAULT 60")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN reading_2_content TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN matching_json TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
 def _assign_missing_colors(cursor):
     """Assign palette colors to students that don't have a color yet."""
     cursor.execute("SELECT id FROM students WHERE color IS NULL OR color = '' ORDER BY id")

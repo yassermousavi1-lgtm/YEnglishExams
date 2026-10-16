@@ -105,6 +105,12 @@
         let wordBankAnswers = {};         // { questionId: { sentenceNumber: word } }
         let currentWordBankIndex = 0;
 
+        // Listening state
+        let listeningStage = 'IDLE';
+        let listeningMatchingAnswers = {};
+        let listeningAudioUrl = null;
+        let listeningMatchingData = null;
+
         // ============================================================
         // TELEGRAM USER
         // ============================================================
@@ -3085,6 +3091,16 @@
                     return;
                 }
 
+                if (exam.exam_type === 'listening') {
+                    questions = data.questions || [];
+                    if (questions.length === 0) { showError('No questions.'); return; }
+                    currentQuestionIndex = 0;
+                    studentAnswers = {};
+                    listeningMatchingAnswers = {};
+                    listeningStage = 'PREPARING';
+                    await startListeningPrep();
+                    return;
+                }
                 // MCQ (existing)
                 questions = data.questions || [];
                 if (questions.length === 0) { showError('No questions.'); return; }
@@ -3092,6 +3108,137 @@
                 startTimer();
                 renderStudentQuestion();
             } catch (error) { showError('Unexpected Error: ' + error.message); }
+        }
+        // ============================================================
+        // LISTENING — state machine
+        // ============================================================
+
+        async function startListeningPrep() {
+            listeningStage = 'PREPARING';
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 40px 24px; text-align: center;">
+                    <div style="font-size: 56px; margin-bottom: 16px;">🎧</div>
+                    <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 12px 0;">${escapeHtml(exam.title)}</h1>
+                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 24px 0;">Preparing audio, please wait...</p>
+                    <div class="academic-progress-bar" style="width: 220px; margin: 0 auto;">
+                        <div class="academic-progress-fill" style="width: 60%;"></div>
+                    </div>
+                    <div id="listenPrepStatus" style="color: #6b7280; font-size: 12px; margin-top: 16px;">Downloading audio...</div>
+                </div>
+            `;
+            try {
+                const resp = await fetch(exam.audio_url, {
+                    headers: { 'X-Telegram-Init-Data': telegram?.initData || '' }
+                });
+                if (!resp.ok) throw new Error('Audio HTTP ' + resp.status);
+                const blob = await resp.blob();
+                listeningAudioUrl = URL.createObjectURL(blob);
+                const st = document.getElementById('listenPrepStatus');
+                if (st) st.textContent = '✅ Audio ready.';
+                listeningMatchingData = exam.matching || null;
+                showListeningReadyScreen();
+            } catch (e) {
+                showError('Could not prepare audio. Please try again.');
+            }
+        }
+
+        function showListeningReadyScreen() {
+            listeningStage = 'READY';
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 40px 24px; text-align: center;">
+                    <div style="font-size: 56px; margin-bottom: 16px;">🎧</div>
+                    <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 12px 0;">${escapeHtml(exam.title)}</h1>
+                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 8px 0;">The audio will play twice. Listen carefully.</p>
+                    <p style="color: #fbbf24; font-size: 13px; margin: 0 0 24px 0;">Do not close or refresh this page.</p>
+                    <button class="academic-primary-btn" style="width: 100%;" onclick="startReading1()">▶ Start Test</button>
+                </div>
+            `;
+        }
+
+        function startReading1() {
+            listeningStage = 'READING_1';
+            const dur = Number(exam.reading_1_duration) || 30;
+            const content = exam.reading_1_content || 'Read the questions carefully.';
+            renderReadingStage('Reading 1', content, dur, startAudio1);
+        }
+
+        function startReading2() {
+            listeningStage = 'READING_2';
+            const dur = Number(exam.reading_2_duration) || 60;
+            const content = exam.reading_2_content || 'Review the matching task.';
+            renderReadingStage('Reading 2', content, dur, startAudio2);
+        }
+
+        function renderReadingStage(label, content, seconds, onDone) {
+            let remaining = seconds;
+            const total = seconds;
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 40px 24px; text-align: center;">
+                    <div style="font-size: 44px; margin-bottom: 12px;">📖</div>
+                    <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 8px 0;">${label}</h1>
+                    <p style="color: #e5e7eb; font-size: 15px; margin: 16px 0 24px 0; line-height: 1.6;">${escapeHtml(content)}</p>
+                    <div id="readingCountdown" style="font-size: 40px; font-weight: 800; color: #f9fafb; margin: 16px 0;">${remaining}s</div>
+                    <div class="academic-progress-bar" style="width: 220px; margin: 0 auto;">
+                        <div id="readingFill" class="academic-progress-fill" style="width: 100%;"></div>
+                    </div>
+                </div>
+            `;
+            const interval = setInterval(() => {
+                remaining--;
+                const numEl = document.getElementById('readingCountdown');
+                if (numEl) numEl.textContent = remaining + 's';
+                const fill = document.getElementById('readingFill');
+                if (fill) fill.style.width = Math.max(0, (remaining / total) * 100) + '%';
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    onDone();
+                }
+            }, 1000);
+        }
+
+        async function startAudio1() {
+            listeningStage = 'AUDIO_1';
+            await playListeningAudioInternal(1, () => {
+                renderStudentQuestion();
+            });
+        }
+
+        async function startAudio2() {
+            listeningStage = 'AUDIO_2';
+            await playListeningAudioInternal(2, () => {
+                showMatchingStage();
+            });
+        }
+
+        async function playListeningAudioInternal(playNumber, onDone) {
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 40px 24px; text-align: center;">
+                    <div style="font-size: 64px; margin-bottom: 16px;">🎧</div>
+                    <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 8px 0;">Listening — ${playNumber} of 2</h1>
+                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 24px 0;">Listen carefully. Do not refresh.</p>
+                    <div class="academic-progress-bar" style="width: 80%; margin: 0 auto;">
+                        <div id="audioFill" class="academic-progress-fill" style="width: 0%; background: #34d399;"></div>
+                    </div>
+                </div>
+            `;
+            const audio = new Audio(listeningAudioUrl);
+            audio.controls = false;
+            audio.addEventListener('timeupdate', () => {
+                if (audio.duration > 0) {
+                    const pct = (audio.currentTime / audio.duration) * 100;
+                    const fill = document.getElementById('audioFill');
+                    if (fill) fill.style.width = pct + '%';
+                }
+            });
+            audio.addEventListener('ended', () => { onDone(); });
+            audio.addEventListener('error', () => {
+                showError('Could not play audio. Please try again.');
+            });
+            try {
+                await audio.play();
+            } catch (e) {
+                showError('Could not start audio. Please tap the button again.');
+            }
         }
 
         // ============================================================
@@ -3300,6 +3447,180 @@
                     <p style="color: #9ca3af; font-size: 14px; margin-top: 24px;">${message}</p>
                 </div>
             `;
+        }
+        // ============================================================
+        // LISTENING — Matching + Submit
+        // ============================================================
+
+        function showMatchingStage() {
+            listeningStage = 'MATCHING';
+            if (!listeningMatchingData || !listeningMatchingData.items || listeningMatchingData.items.length === 0) {
+                submitListeningExam();
+                return;
+            }
+            renderMatchingStage();
+        }
+
+        function renderMatchingStage() {
+            const md = listeningMatchingData;
+            const items = md.items || [];
+            const options = md.options || [];
+            const instructions = md.instructions || 'Match each item with the correct option.';
+
+            let optionsHtml = '';
+            options.forEach(opt => {
+                optionsHtml += `
+                    <div class="wb-chip" data-opt-id="${escapeHtml(opt.id)}"
+                         onpointerdown="listenStartDrag(event, '${escapeHtml(opt.id)}')">
+                        ${escapeHtml(opt.text)}
+                    </div>
+                `;
+            });
+
+            let itemsHtml = '';
+            items.forEach(item => {
+                const assigned = listeningMatchingAnswers[item.id];
+                const found = options.find(o => o.id === assigned);
+                const assignedText = assigned ? (found ? found.text : assigned) : '_____';
+                const filledClass = assigned ? 'wb-blank-filled' : '';
+                itemsHtml += `
+                    <div class="wb-sentence">
+                        <span class="wb-num">${escapeHtml(item.id)}.</span>
+                        <span class="wb-text">${escapeHtml(item.text)}
+                            <span class="wb-blank ${filledClass}"
+                                  data-item-id="${escapeHtml(item.id)}"
+                                  onclick="removeMatchingAssignment('${escapeHtml(item.id)}')">
+                                ${escapeHtml(assignedText)}
+                            </span>
+                        </span>
+                    </div>
+                `;
+            });
+
+            document.querySelector('.exam-card').style.overflow = 'visible';
+            document.querySelector('.exam-card').innerHTML = `
+                <div class="wb-wrapper">
+                    <div class="wb-inner">
+                        <div class="wb-header">
+                            <h1 class="wb-title">Matching</h1>
+                            <span class="academic-timer" id="academicTimer">${formatTime(remainingSeconds)}</span>
+                        </div>
+                        <p class="wb-exam-title">${escapeHtml(exam.title)}</p>
+                        <div class="wb-instruction">${escapeHtml(instructions)}</div>
+                        <div class="wb-word-bank">
+                            <div class="wb-bank-label">📦 Options</div>
+                            <div class="wb-bank-chips">${optionsHtml}</div>
+                        </div>
+                        <div class="wb-sentences">${itemsHtml}</div>
+                        <button class="academic-primary-btn wb-submit-btn" onclick="submitListeningExam()">
+                            ✓ Submit Exam
+                        </button>
+                        <div id="examStatus" class="wb-status"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        let listenDragged = null;
+        let listenDragGhost = null;
+
+        function listenStartDrag(event, optId) {
+            event.preventDefault();
+            listenDragged = optId;
+            listenDragGhost = document.createElement('div');
+            listenDragGhost.className = 'wb-drag-ghost';
+            listenDragGhost.textContent = optId;
+            document.body.appendChild(listenDragGhost);
+            const rect = event.target.getBoundingClientRect();
+            const dx = event.clientX - rect.left;
+            const dy = event.clientY - rect.top;
+            listenDragGhost.style.left = (event.clientX - dx) + 'px';
+            listenDragGhost.style.top = (event.clientY - dy) + 'px';
+            listenDragGhost.dataset.dx = dx;
+            listenDragGhost.dataset.dy = dy;
+            event.target.classList.add('wb-chip-dragging');
+            document.addEventListener('pointermove', listenPointerMove);
+            document.addEventListener('pointerup', listenPointerUp);
+            document.addEventListener('pointercancel', listenPointerUp);
+        }
+
+        function listenPointerMove(event) {
+            if (!listenDragged || !listenDragGhost) return;
+            event.preventDefault();
+            const dx = parseFloat(listenDragGhost.dataset.dx) || 0;
+            const dy = parseFloat(listenDragGhost.dataset.dy) || 0;
+            listenDragGhost.style.left = (event.clientX - dx) + 'px';
+            listenDragGhost.style.top = (event.clientY - dy) + 'px';
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
+            const under = document.elementFromPoint(event.clientX, event.clientY);
+            const blank = under?.closest?.('.wb-blank');
+            if (blank && !blank.classList.contains('wb-blank-filled')) {
+                blank.classList.add('wb-blank-over');
+            }
+        }
+
+        function listenPointerUp(event) {
+            if (!listenDragged) return;
+            event.preventDefault();
+            document.removeEventListener('pointermove', listenPointerMove);
+            document.removeEventListener('pointerup', listenPointerUp);
+            document.removeEventListener('pointercancel', listenPointerUp);
+            if (listenDragGhost) { listenDragGhost.remove(); listenDragGhost = null; }
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
+            document.querySelectorAll('.wb-chip').forEach(c => c.classList.remove('wb-chip-dragging'));
+            const under = document.elementFromPoint(event.clientX, event.clientY);
+            const blank = under?.closest?.('.wb-blank');
+            if (blank && !blank.classList.contains('wb-blank-filled')) {
+                const itemId = blank.dataset.itemId;
+                listeningMatchingAnswers[itemId] = listenDragged;
+                listenDragged = null;
+                renderMatchingStage();
+                return;
+            }
+            listenDragged = null;
+            renderMatchingStage();
+        }
+
+        function removeMatchingAssignment(itemId) {
+            delete listeningMatchingAnswers[itemId];
+            renderMatchingStage();
+        }
+
+        async function submitListeningExam() {
+            if (isSubmitting) return;
+            const confirmed = confirm('Are you sure you want to submit?');
+            if (!confirmed) return;
+            isSubmitting = true;
+            listeningStage = 'SUBMITTING';
+            const statusEl = document.getElementById('examStatus');
+            if (statusEl) statusEl.textContent = 'Submitting...';
+            try {
+                const payload = {
+                    exam_id: Number(examId),
+                    answers: studentAnswers,
+                    matching_answers: listeningMatchingAnswers,
+                    started_at: startedAt
+                };
+                const response = await fetch('/api/exam/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': telegram?.initData || '' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    let message = 'Failed (HTTP ' + response.status + ')';
+                    try { const ed = await response.json(); if (ed.message) message = ed.message; } catch (e) {}
+                    throw new Error(message);
+                }
+                const data = await response.json();
+                if (data.status !== 'success') throw new Error(data.message || 'Failed.');
+                if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+                listeningStage = 'COMPLETED';
+                renderStudentResult(data.result, false);
+            } catch (error) {
+                isSubmitting = false;
+                listeningStage = 'MATCHING';
+                if (statusEl) statusEl.textContent = error.message || 'Could not submit.';
+            }
         }
 
                // ============================================================
