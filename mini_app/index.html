@@ -3251,14 +3251,77 @@
                 </div>
             `;
         }
+        function listeningMcqListHtml() {
+            if (!questions || questions.length === 0) return '';
+            let html = '';
+            questions.forEach((q, idx) => {
+                const keys = ['A', 'B', 'C', 'D'].filter(k => q.options && q.options[k]);
+                html += `
+                    <div style="background:#111827; border:1px solid #1e293b; border-radius:8px; padding:12px 14px; margin-bottom:10px;">
+                        <div style="color:#60a5fa; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Question ${idx + 1}</div>
+                        <div style="color:#f9fafb; font-size:14px; line-height:1.5; margin-bottom:10px;">${escapeHtml(q.question_text || '')}</div>
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            ${keys.map(k => `
+                                <div style="color:#d1d5db; font-size:13px; line-height:1.4;">
+                                    <span style="color:#9ca3af; font-weight:700; margin-right:6px;">${k}.</span>${escapeHtml(q.options[k])}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            return html;
+        }
+
+        function renderListeningStage(innerTopHtml) {
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 16px 20px;">
+                    <div id="listeningTopArea">${innerTopHtml}</div>
+                    <div style="color:#60a5fa; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin:18px 0 10px 0; padding-bottom:8px; border-bottom:1px solid #374151;">
+                        Questions (${questions.length})
+                    </div>
+                    <div id="listeningMcqList">${listeningMcqListHtml()}</div>
+                </div>
+            `;
+        }
+
+        function updateListeningTop(html) {
+            const el = document.getElementById('listeningTopArea');
+            if (el) el.innerHTML = html;
+        }
+
 
         function startReading1() {
             listeningStage = 'READING_1';
             const dur = Number(exam.reading_1_duration) || 30;
             const content = exam.reading_1_content || 'Read the questions carefully.';
-            renderReadingStage('Reading 1', content, dur, startAudio1);
-        }
 
+            renderListeningStage(`
+                <div style="text-align:center;">
+                    <div style="font-size:34px; margin-bottom:6px;">📖</div>
+                    <h1 style="color:#60a5fa; font-size:18px; font-weight:700; margin:0 0 6px 0;">Reading 1</h1>
+                    <p style="color:#e5e7eb; font-size:13px; margin:6px 0 12px 0; line-height:1.5;">${escapeHtml(content)}</p>
+                    <div id="readingCountdown" style="font-size:34px; font-weight:800; color:#f9fafb; margin:6px 0;">${dur}s</div>
+                    <div class="academic-progress-bar" style="width:220px; margin:0 auto;">
+                        <div id="readingFill" class="academic-progress-fill" style="width:100%;"></div>
+                    </div>
+                </div>
+            `);
+
+            let remaining = dur;
+            const total = dur;
+            const interval = setInterval(() => {
+                remaining--;
+                const numEl = document.getElementById('readingCountdown');
+                if (numEl) numEl.textContent = remaining + 's';
+                const fill = document.getElementById('readingFill');
+                if (fill) fill.style.width = Math.max(0, (remaining / total) * 100) + '%';
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    startAudio1();
+                }
+            }, 1000);
+        }
         function startReading2() {
             listeningStage = 'READING_2';
             const dur = Number(exam.reading_2_duration) || 60;
@@ -3295,9 +3358,39 @@
 
         async function startAudio1() {
             listeningStage = 'AUDIO_1';
-            await playListeningAudioInternal(1, () => {
+
+            updateListeningTop(`
+                <div style="text-align:center;">
+                    <div style="font-size:44px; margin-bottom:6px;">🎧</div>
+                    <h1 style="color:#60a5fa; font-size:18px; font-weight:700; margin:0 0 6px 0;">Listening — 1 of 2</h1>
+                    <p style="color:#9ca3af; font-size:12px; margin:0 0 12px 0;">Listen carefully. Do not refresh.</p>
+                    <div class="academic-progress-bar" style="width:80%; margin:0 auto;">
+                        <div id="audioFill" class="academic-progress-fill" style="width:0%; background:#34d399;"></div>
+                    </div>
+                </div>
+            `);
+
+            const audio = new Audio(listeningAudioUrl);
+            audio.controls = false;
+            audio.addEventListener('timeupdate', () => {
+                if (audio.duration > 0) {
+                    const pct = (audio.currentTime / audio.duration) * 100;
+                    const fill = document.getElementById('audioFill');
+                    if (fill) fill.style.width = pct + '%';
+                }
+            });
+            audio.addEventListener('ended', () => {
+                startTimer();
                 renderStudentQuestion();
             });
+            audio.addEventListener('error', () => {
+                showError('Could not play audio. Please try again.');
+            });
+            try {
+                await audio.play();
+            } catch (e) {
+                showError('Could not start audio. Please tap the button again.');
+            }
         }
 
         async function startAudio2() {
@@ -3384,7 +3477,9 @@
                     <div style="display: flex; gap: 12px; margin-top: 24px;">
                         <button class="academic-secondary-btn" style="flex: 1;" onclick="studentPrevious()" ${currentQuestionIndex === 0 ? 'disabled' : ''}>▸ Previous</button>
                         <button class="academic-primary-btn" style="flex: 1;" onclick="studentNext()">
-                            ${currentQuestionIndex === totalQuestions - 1 ? 'Submit Exam' : 'Next ▸'}
+                            ${currentQuestionIndex === totalQuestions - 1
+                                ? (exam.exam_type === 'listening' ? 'Next Step ▸' : 'Submit Exam')
+                                : 'Next ▸'}
                         </button>
                     </div>
 
@@ -3411,6 +3506,7 @@
             }
         }
 
+
         async function studentNext() {
             if (isSubmitting) return;
             if (currentQuestionIndex < questions.length - 1) {
@@ -3418,9 +3514,12 @@
                 renderStudentQuestion();
                 return;
             }
+            if (exam && exam.exam_type === 'listening') {
+                startReading2();
+                return;
+            }
             await submitStudentExam();
         }
-
         function startTimer() {
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(() => {
