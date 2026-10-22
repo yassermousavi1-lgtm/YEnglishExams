@@ -274,6 +274,14 @@ def get_database_connection():
         connection.commit()
     except sqlite3.OperationalError:
         pass
+
+    # results.matching_json — for listening exams
+    try:
+        cursor.execute("ALTER TABLE results ADD COLUMN matching_json TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
     return connection
 
 
@@ -1508,10 +1516,11 @@ def submit_exam():
             if total_questions == 0:
                 return jsonify({"status": "error", "message": "This exam has no questions."}), 400
 
+
             cursor.execute("""
-                INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived, exam_title_snapshot)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-            """, (student["id"], exam_id, total_score, total_questions, started_at, completed_at, exam["title"]))
+                INSERT INTO results (student_id, exam_id, score, total_questions, started_at, completed_at, is_archived, exam_title_snapshot, matching_json)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+            """, (student["id"], exam_id, total_score, total_questions, started_at, completed_at, exam["title"], json.dumps(matching_answers)))
             result_id = cursor.lastrowid
 
             for question in questions:

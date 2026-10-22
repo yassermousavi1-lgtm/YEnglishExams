@@ -301,6 +301,20 @@ def run_migrations(connection):
         connection.commit()
     except sqlite3.OperationalError:
         pass
+
+    # --------------------------------------------------------
+    # Migration 13: add matching_json to results
+    #
+    # Stores the student's matching answers for listening exams.
+    # For MCQ and Word Bank exams this stays empty.
+    # Additive only — no existing data is touched.
+    # --------------------------------------------------------
+    try:
+        cursor.execute("ALTER TABLE results ADD COLUMN matching_json TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
 def _assign_missing_colors(cursor):
     """Assign palette colors to students that don't have a color yet."""
     cursor.execute("SELECT id FROM students WHERE color IS NULL OR color = '' ORDER BY id")
