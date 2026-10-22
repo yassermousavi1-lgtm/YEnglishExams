@@ -282,6 +282,12 @@ def get_database_connection():
     except sqlite3.OperationalError:
         pass
 
+    # listening_audio.audio_url — direct Google Drive link
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN audio_url TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
     return connection
 
 
@@ -2570,6 +2576,7 @@ def teacher_create_exam_with_questions():
     exam_type_param = (data.get("exam_type") or "").strip().lower()
     if exam_type_param == "listening":
         audio_file_id = (data.get("audio_file_id") or "").strip()
+        audio_url = (data.get("audio_url") or "").strip()
         audio_mime_type = (data.get("audio_mime_type") or "audio/mpeg").strip()
         questions_data = data.get("questions", [])
         reading_1_duration = int(data.get("reading_1_duration") or 30)
@@ -2578,8 +2585,11 @@ def teacher_create_exam_with_questions():
         reading_2_content = (data.get("reading_2_content") or "").strip()
         matching_payload = data.get("matching")
         matching_json_str = json.dumps(matching_payload) if matching_payload else ""
-        if not audio_file_id:
-            return jsonify({"status": "error", "message": "audio_file_id is required for listening exams."}), 400
+        if not audio_file_id and not audio_url:
+            return jsonify({"status": "error", "message": "audio_url (Google Drive link) or audio_file_id is required for listening exams."}), 400       
+
+
+
         if not questions_data:
             return jsonify({"status": "error", "message": "questions are required."}), 400
 
@@ -2622,10 +2632,10 @@ def teacher_create_exam_with_questions():
                     (exam_id, qid, order)
                 )
             cursor.execute(
-                "INSERT INTO listening_audio (exam_id, telegram_file_id, mime_type, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (exam_id, audio_file_id, audio_mime_type, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json_str)
+                "INSERT INTO listening_audio (exam_id, telegram_file_id, mime_type, audio_url, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (exam_id, audio_file_id, audio_mime_type, audio_url, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, matching_json_str)
             )
-            
+      
 
             connection.commit()
             return jsonify({
@@ -3298,7 +3308,40 @@ def teacher_delete_makeup_session(makeup_id):
 # ============================================================
 # LISTENING — audio file_id fetch + audio streaming
 # ============================================================
+def convert_drive_link_to_direct(url):
+    """
+    Convert a normal Google Drive share link into a direct-download link.
 
+    Accepted forms:
+      https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+      https://drive.google.com/file/d/FILE_ID/view
+      https://drive.google.com/open?id=FILE_ID
+      https://drive.google.com/uc?id=FILE_ID
+
+    Returns a direct URL, or the original URL if no pattern matches.
+    """
+    if not url:
+        return url
+    url = url.strip()
+
+    # Already a direct download link
+    if "drive.usercontent.google.com" in url or "/uc?" in url:
+        return url
+
+    # https://drive.google.com/file/d/FILE_ID/view?...
+    import re
+    m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", url)
+    if m:
+        file_id = m.group(1)
+        return "https://drive.usercontent.google.com/download?id=" + file_id + "&export=download"
+
+    # https://drive.google.com/open?id=FILE_ID
+    m = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
+    if m:
+        file_id = m.group(1)
+        return "https://drive.usercontent.google.com/download?id=" + file_id + "&export=download"
+
+    return url
 @app.route("/api/teacher/listening/fetch_file_id", methods=["POST"])
 def teacher_listening_fetch_file_id():
     """
@@ -3400,20 +3443,20 @@ def teacher_listening_fetch_file_id():
         print("FETCH FILE ID ERROR:", e)
         return jsonify({"status": "error", "message": "Server error."}), 500
 
-
 @app.route("/api/listening/audio/<int:exam_id>")
 def get_listening_audio(exam_id):
     """
     Stream the listening audio for the given exam to an authorized
-    student. The Telegram bot token stays on the server.
+    student.
+
+    Two modes:
+      1. If audio_url is set (Google Drive link), download from there.
+      2. Otherwise, fall back to the old Telegram file_id method.
     """
     auth_result = get_authenticated_user()
     if not auth_result["valid"]:
         return jsonify({"status": "error", "message": auth_result["message"]}), 401
     telegram_user = auth_result["user"]
-
-    if not TELEGRAM_BOT_TOKEN:
-        return jsonify({"status": "error", "message": "Bot token is not configured."}), 500
 
     connection = get_database_connection()
     try:
@@ -3424,13 +3467,69 @@ def get_listening_audio(exam_id):
             return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
 
         cursor = connection.cursor()
-        cursor.execute("SELECT telegram_file_id, mime_type FROM listening_audio WHERE exam_id = ? LIMIT 1", (exam_id,))
+        cursor.execute(
+            "SELECT telegram_file_id, mime_type, audio_url FROM listening_audio WHERE exam_id = ? LIMIT 1",
+            (exam_id,)
+        )
         row = cursor.fetchone()
         if not row:
             return jsonify({"status": "error", "message": "Audio not found for this exam."}), 404
 
         file_id = row["telegram_file_id"]
         mime_type = row["mime_type"] or "audio/mpeg"
+        audio_url = (row["audio_url"] or "").strip()
+
+        from flask import Response
+
+        # ============================================================
+        # Mode 1: Google Drive (audio_url is set)
+        # ============================================================
+        if audio_url:
+            direct_url = convert_drive_link_to_direct(audio_url)
+            print("LISTENING AUDIO (drive):", direct_url)
+
+            try:
+                fr = requests.get(direct_url, timeout=60, allow_redirects=True)
+            except requests.exceptions.Timeout:
+                return jsonify({"status": "error", "message": "Google Drive did not respond in time."}), 504
+            except Exception as ex:
+                print("DRIVE DOWNLOAD ERROR:", ex)
+                return jsonify({"status": "error", "message": "Could not reach Google Drive."}), 500
+
+            if not fr.ok:
+                return jsonify({"status": "error", "message": "Failed to download audio from Google Drive."}), 500
+
+            # Detect mime from headers if possible; fallback to stored mime
+            header_mime = (fr.headers.get("content-type") or "").split(";")[0].strip()
+            if header_mime and header_mime.startswith("audio/"):
+                mime_type = header_mime
+
+            # Sanity check: if Google returned an HTML page (e.g. confirmation),
+            # refuse to send it as audio.
+            if mime_type.startswith("text/html"):
+                print("DRIVE RETURNED HTML (file may require confirmation). First bytes:", fr.content[:100])
+                return jsonify({
+                    "status": "error",
+                    "message": "Google Drive returned an HTML page instead of audio. The file may be too large or not shared publicly."
+                }), 500
+
+            return Response(
+                fr.content,
+                mimetype=mime_type,
+                headers={
+                    "Content-Disposition": f'inline; filename="exam_{exam_id}.mp3"',
+                    "Cache-Control": "private, max-age=3600",
+                }
+            )
+
+        # ============================================================
+        # Mode 2: Telegram file_id (legacy)
+        # ============================================================
+        if not TELEGRAM_BOT_TOKEN:
+            return jsonify({"status": "error", "message": "Bot token is not configured."}), 500
+
+        if not file_id:
+            return jsonify({"status": "error", "message": "No audio source found for this exam."}), 404
 
         # 1) Get file path from Telegram
         get_file_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile"
@@ -3450,7 +3549,6 @@ def get_listening_audio(exam_id):
             return jsonify({"status": "error", "message": "Failed to download audio from Telegram."}), 500
 
         # 3) Stream to client
-        from flask import Response
         return Response(
             fr.content,
             mimetype=mime_type,
@@ -3460,7 +3558,7 @@ def get_listening_audio(exam_id):
             }
         )
     except requests.exceptions.Timeout:
-        return jsonify({"status": "error", "message": "Telegram did not respond in time."}), 504
+        return jsonify({"status": "error", "message": "Request timed out."}), 504
     except Exception as e:
         print("AUDIO STREAM ERROR:", e)
         return jsonify({"status": "error", "message": "Server error."}), 500

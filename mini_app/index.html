@@ -2537,19 +2537,24 @@
                     </div>
 
                     <div style="background: #111827; border: 1px solid #374151; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                        <div style="color: #60a5fa; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">🎧 Audio</div>
-                        <button class="academic-secondary-btn" style="width: 100%;" onclick="fetchLatestAudio()">📥 Fetch Last Audio from Channel</button>
-                        <div id="audioFetchStatus" style="margin-top: 10px; color: #9ca3af; font-size: 12px; text-align: center;"></div>
-                        <div id="audioFetchResult" style="display: none; margin-top: 10px;"></div>
+                        <div style="color: #60a5fa; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">🎧 Audio (Google Drive)</div>
+                        <p style="color: #9ca3af; font-size: 12px; margin: 0 0 6px 0; line-height: 1.5;">
+                            1. Upload the audio file to Google Drive.<br>
+                            2. Share it with <strong>"Anyone with the link"</strong>.<br>
+                            3. Copy the share link and put it in the JSON below as <code style="background:#0f172a; padding:2px 6px; border-radius:4px; color:#60a5fa;">"audio_url"</code>.
+                        </p>
+                        <p style="color: #6b7280; font-size: 11px; margin: 0; line-height: 1.5;">
+                            Example: <code style="background:#0f172a; padding:2px 6px; border-radius:4px;">"audio_url": "https://drive.google.com/file/d/XXXX/view?usp=sharing"</code>
+                        </p>
                     </div>
 
                     <p style="color: #9ca3af; font-size: 13px; margin: 0 0 8px 0;">
-                        Paste a single JSON object with all fields (title, category, time_limit, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, multiple_choice, matching).
+                        Paste a single JSON object with all fields (title, category, time_limit, <strong>audio_url</strong>, reading_1_duration, reading_1_content, reading_2_duration, reading_2_content, multiple_choice, matching).
                     </p>
 
                     <textarea id="examQuestionsJson" rows="18" class="academic-input"
                         style="font-family: monospace; direction: ltr; resize: vertical;"
-                        placeholder='{"title":"...","category":"...","time_limit":10,"reading_1_duration":15,"reading_1_content":"...","reading_2_duration":20,"reading_2_content":"...","multiple_choice":[...],"matching":{...}}'></textarea>
+                        placeholder='{"title":"...","category":"...","time_limit":10,"audio_url":"https://drive.google.com/file/d/XXXX/view?usp=sharing","reading_1_duration":15,"reading_1_content":"...","reading_2_duration":20,"reading_2_content":"...","multiple_choice":[...],"matching":{...}}'></textarea>
 
                     <button class="academic-primary-btn" style="width: 100%; margin-top: 12px;" onclick="createListeningExam()">
                         Create Listening Exam
@@ -2563,10 +2568,6 @@
             const statusEl = document.getElementById('createExamStatus');
             const raw = (document.getElementById('examQuestionsJson').value || '').trim();
 
-            if (!fetchedAudioFileId) {
-                statusEl.textContent = '⚠️ Please fetch the audio first.';
-                return;
-            }
             if (!raw) {
                 statusEl.textContent = '⚠️ Please paste the JSON.';
                 return;
@@ -2592,6 +2593,16 @@
                 return;
             }
 
+            const audio_url = (payload.audio_url || '').toString().trim();
+            if (!audio_url) {
+                statusEl.textContent = '⚠️ JSON must contain "audio_url" (Google Drive link).';
+                return;
+            }
+            if (!audio_url.startsWith('https://drive.google.com/') && !audio_url.startsWith('https://drive.usercontent.google.com/')) {
+                statusEl.textContent = '⚠️ "audio_url" must be a Google Drive link.';
+                return;
+            }
+
             const mcq = payload.multiple_choice || payload.questions || [];
             if (!Array.isArray(mcq) || mcq.length === 0) {
                 statusEl.textContent = '⚠️ "multiple_choice" must be a non-empty array.';
@@ -2609,8 +2620,7 @@
                         category: category,
                         time_limit: time_limit,
                         exam_type: 'listening',
-                        audio_file_id: fetchedAudioFileId,
-                        audio_mime_type: fetchedAudioMimeType || 'audio/mpeg',
+                        audio_url: audio_url,
                         questions: mcq,
                         reading_1_duration: payload.reading_1_duration || 30,
                         reading_1_content: payload.reading_1_content || '',
@@ -2622,8 +2632,6 @@
                 const data = await response.json();
                 if (data.status === 'success') {
                     statusEl.textContent = '✅ Listening exam created! (ID: ' + data.exam_id + ')';
-                    fetchedAudioFileId = null;
-                    fetchedAudioMimeType = null;
                     setTimeout(() => renderListeningCreateForm(), 2000);
                 } else {
                     statusEl.textContent = '❌ ' + (data.message || 'Failed.');
@@ -2632,6 +2640,7 @@
                 statusEl.textContent = '❌ Error: ' + (e.message || 'Unknown');
             }
         }
+
         async function createExamWithJson() {
 
             if (selectedExamType === 'listening') {

@@ -315,6 +315,24 @@ def run_migrations(connection):
     except sqlite3.OperationalError:
         pass
 
+    # --------------------------------------------------------
+    # Migration 14: add audio_url to listening_audio
+    #
+    # Stores the Google Drive direct link (or any direct URL)
+    # for the listening exam audio. Replaces the Telegram
+    # file_id method, which cannot be downloaded from
+    # PythonAnywhere free plan (api.telegram.org/file is blocked).
+    #
+    # Additive only — no existing data is touched.
+    # --------------------------------------------------------
+    try:
+        cursor.execute("ALTER TABLE listening_audio ADD COLUMN audio_url TEXT DEFAULT ''")
+        connection.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
+
 def _assign_missing_colors(cursor):
     """Assign palette colors to students that don't have a color yet."""
     cursor.execute("SELECT id FROM students WHERE color IS NULL OR color = '' ORDER BY id")
