@@ -106,10 +106,16 @@
         let currentWordBankIndex = 0;
 
         // Listening state
+        // Listening state (v2 — 8-stage)
         let listeningStage = 'IDLE';
-        let listeningMatchingAnswers = {};
         let listeningAudioUrl = null;
         let listeningMatchingData = null;
+        let listeningMcqAnswers = {};
+        let listeningMatchingAnswers = {};
+        let listeningAudio1Played = false;
+        let listeningAudio2Played = false;
+        let listeningCountdownInterval = null;
+        let listeningMainTimerInterval = null;
 
         // ============================================================
         // TELEGRAM USER
@@ -3210,14 +3216,127 @@
         // LISTENING — state machine
         // ============================================================
 
+        // ------------------------------------------------------------
+        // LISTENING v2 — helper functions
+        // ------------------------------------------------------------
+
+        function startListeningMainTimer() {
+            if (listeningMainTimerInterval) clearInterval(listeningMainTimerInterval);
+            listeningMainTimerInterval = setInterval(() => {
+                if (remainingSeconds <= 0) {
+                    clearInterval(listeningMainTimerInterval);
+                    listeningMainTimerInterval = null;
+                    autoSubmitOnTimeout();
+                    return;
+                }
+                remainingSeconds--;
+                const timerEl = document.getElementById('listeningMainTimer');
+                if (timerEl) {
+                    timerEl.textContent = formatTime(remainingSeconds);
+                    if (remainingSeconds <= 60 && remainingSeconds > 0) {
+                        timerEl.classList.add('warning');
+                    }
+                }
+            }, 1000);
+        }
+
+        function listeningMainTimerHtml() {
+            return `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                    <div style="color:#60a5fa; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px;">${escapeHtml(exam.title)}</div>
+                    <div id="listeningMainTimer" class="listening-main-timer">
+                        <span>⏱</span>
+                        <span>${formatTime(remainingSeconds)}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function listeningAudioWaveHtml() {
+            let bars = '';
+            for (let i = 0; i < 11; i++) {
+                bars += `<div class="listening-wave-bar"></div>`;
+            }
+            return `<div class="listening-wave-wrap">${bars}</div>`;
+        }
+
+        function listeningReadingBarHtml(label, barId) {
+            return `
+                <div class="listening-reading-wrap" id="${barId}Wrap">
+                    <div class="listening-reading-label">${label}</div>
+                    <div class="listening-reading-bar">
+                        <div id="${barId}" class="listening-reading-bar-fill" style="width:100%;"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function startListeningReadingBar(durationSeconds, barId, onDone) {
+            const fill = document.getElementById(barId);
+            if (!fill) { onDone(); return; }
+            let remaining = durationSeconds;
+            const total = durationSeconds;
+            const interval = setInterval(() => {
+                remaining--;
+                if (fill) fill.style.width = Math.max(0, (remaining / total) * 100) + '%';
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    onDone();
+                }
+            }, 1000);
+        }
+
+        function fadeListeningReadingBar(barId) {
+            const wrap = document.getElementById(barId + 'Wrap');
+            if (wrap) {
+                wrap.style.transition = 'opacity 0.5s ease';
+                wrap.style.opacity = '0';
+                setTimeout(() => { if (wrap) wrap.remove(); }, 500);
+            }
+        }
+
+        function renderListeningMcqCards() {
+            if (!questions || questions.length === 0) return '';
+            let html = '';
+            questions.forEach((q, idx) => {
+                const keys = ['A', 'B', 'C', 'D'].filter(k => q.options && q.options[k]);
+                const selectedKey = listeningMcqAnswers[q.id];
+                let opts = '';
+                keys.forEach(k => {
+                    const cls = selectedKey === k ? ' selected' : '';
+                    opts += `
+                        <button class="listening-mcq-option${cls}" onclick="selectListeningMcq(${q.id}, '${k}')">
+                            <span class="listening-mcq-option-letter">${k}</span>
+                            <span>${escapeHtml(q.options[k])}</span>
+                        </button>
+                    `;
+                });
+                html += `
+                    <div class="listening-mcq-card">
+                        <div class="listening-mcq-qnum">Question ${idx + 1}</div>
+                        <div class="listening-mcq-qtext">${escapeHtml(q.question_text || '')}</div>
+                        <div class="listening-mcq-options">${opts}</div>
+                    </div>
+                `;
+            });
+            return html;
+        }
+
+        function selectListeningMcq(questionId, key) {
+            listeningMcqAnswers[questionId] = key;
+            const target = document.getElementById('listeningMcqList');
+            if (target) target.innerHTML = renderListeningMcqCards();
+        }
+       
         async function startListeningPrep() {
             listeningStage = 'PREPARING';
             document.querySelector('.exam-card').innerHTML = `
                 <div style="padding: 40px 24px; text-align: center;">
-                    <div style="font-size: 56px; margin-bottom: 16px;">🎧</div>
+                    <div class="listening-spinner"></div>
+                    <div style="font-size: 44px; margin-bottom: 12px;">🎧</div>
                     <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 12px 0;">${escapeHtml(exam.title)}</h1>
-                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 24px 0;">Preparing audio, please wait...</p>
-                    <div class="academic-progress-bar" style="width: 220px; margin: 0 auto;">
+                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 8px 0;">Preparing audio, please wait...</p>
+                    <div class="academic-progress-bar" style="width: 220px; margin: 16px auto;">
                         <div class="academic-progress-fill" style="width: 60%;"></div>
                     </div>
                     <div id="listenPrepStatus" style="color: #6b7280; font-size: 12px; margin-top: 16px;">Downloading audio...</div>
@@ -3247,10 +3366,12 @@
                     <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 12px 0;">${escapeHtml(exam.title)}</h1>
                     <p style="color: #9ca3af; font-size: 14px; margin: 0 0 8px 0;">The audio will play twice. Listen carefully.</p>
                     <p style="color: #fbbf24; font-size: 13px; margin: 0 0 24px 0;">Do not close or refresh this page.</p>
-                    <button class="academic-primary-btn" style="width: 100%;" onclick="startReading1()">▶ Start Test</button>
+                    <button class="academic-primary-btn" style="width: 100%;" onclick="startListeningExam()">▶ Start Exam</button>
                 </div>
             `;
-        }
+        }     
+
+
         function listeningMcqListHtml() {
             if (!questions || questions.length === 0) return '';
             let html = '';
@@ -3291,97 +3412,217 @@
         }
 
 
-        function startReading1() {
+        function startListeningExam() {
             listeningStage = 'READING_1';
+
+            // Start the main timer now
+            startListeningMainTimer();
+
             const dur = Number(exam.reading_1_duration) || 30;
             const content = exam.reading_1_content || 'Read the questions carefully.';
 
-            renderListeningStage(`
-                <div style="text-align:center;">
-                    <div style="font-size:34px; margin-bottom:6px;">📖</div>
-                    <h1 style="color:#60a5fa; font-size:18px; font-weight:700; margin:0 0 6px 0;">Reading 1</h1>
-                    <p style="color:#e5e7eb; font-size:13px; margin:6px 0 12px 0; line-height:1.5;">${escapeHtml(content)}</p>
-                    <div id="readingCountdown" style="font-size:34px; font-weight:800; color:#f9fafb; margin:6px 0;">${dur}s</div>
-                    <div class="academic-progress-bar" style="width:220px; margin:0 auto;">
-                        <div id="readingFill" class="academic-progress-fill" style="width:100%;"></div>
-                    </div>
-                </div>
-            `);
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 16px 20px;">
+                    ${listeningMainTimerHtml()}
 
-            let remaining = dur;
-            const total = dur;
-            const interval = setInterval(() => {
-                remaining--;
-                const numEl = document.getElementById('readingCountdown');
-                if (numEl) numEl.textContent = remaining + 's';
-                const fill = document.getElementById('readingFill');
-                if (fill) fill.style.width = Math.max(0, (remaining / total) * 100) + '%';
-                if (remaining <= 0) {
-                    clearInterval(interval);
-                    startAudio1();
-                }
-            }, 1000);
+                    ${listeningReadingBarHtml('Reading Time 1', 'reading1Fill')}
+
+                    <div class="wb-instruction">${escapeHtml(content)}</div>
+
+                    <div style="color:#60a5fa; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin:18px 0 10px 0; padding-bottom:8px; border-bottom:1px solid #374151;">
+                        Questions (${questions.length})
+                    </div>
+                    <div id="listeningMcqList">${renderListeningMcqCards()}</div>
+                </div>
+            `;
+
+            startListeningReadingBar(dur, 'reading1Fill', () => {
+                fadeListeningReadingBar('reading1Fill');
+                setTimeout(() => startAudio1(), 400);
+            });
         }
+
         function startReading2() {
             listeningStage = 'READING_2';
             const dur = Number(exam.reading_2_duration) || 60;
             const content = exam.reading_2_content || 'Review the matching task.';
-            renderReadingStage('Reading 2', content, dur, startAudio2);
-        }
 
-        function renderReadingStage(label, content, seconds, onDone) {
-            let remaining = seconds;
-            const total = seconds;
+            const md = listeningMatchingData || {};
+            const mcqReviewHtml = renderListeningMcqCards();
+
             document.querySelector('.exam-card').innerHTML = `
-                <div style="padding: 40px 24px; text-align: center;">
-                    <div style="font-size: 44px; margin-bottom: 12px;">📖</div>
-                    <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 8px 0;">${label}</h1>
-                    <p style="color: #e5e7eb; font-size: 15px; margin: 16px 0 24px 0; line-height: 1.6;">${escapeHtml(content)}</p>
-                    <div id="readingCountdown" style="font-size: 40px; font-weight: 800; color: #f9fafb; margin: 16px 0;">${remaining}s</div>
-                    <div class="academic-progress-bar" style="width: 220px; margin: 0 auto;">
-                        <div id="readingFill" class="academic-progress-fill" style="width: 100%;"></div>
+                <div style="padding: 16px 20px;">
+                    ${listeningMainTimerHtml()}
+
+                    ${listeningReadingBarHtml('Reading Time 2', 'reading2Fill')}
+
+                    <div class="wb-instruction">${escapeHtml(content)}</div>
+
+                    <div class="listening-collapsible" id="mcqReviewCollapsible">
+                        <div class="listening-collapsible-header" onclick="toggleListeningReview()">
+                            <span>📋 Review Questions (${questions.length})</span>
+                            <span class="listening-collapsible-arrow">▸</span>
+                        </div>
+                        <div class="listening-collapsible-body">
+                            ${mcqReviewHtml}
+                        </div>
                     </div>
+
+                    <div style="color:#60a5fa; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin:18px 0 10px 0; padding-bottom:8px; border-bottom:1px solid #374151;">
+                        Matching (${(md.items || []).length})
+                    </div>
+                    <div id="listeningMatchingList">${renderListeningMatchingHtml()}</div>
                 </div>
             `;
-            const interval = setInterval(() => {
-                remaining--;
-                const numEl = document.getElementById('readingCountdown');
-                if (numEl) numEl.textContent = remaining + 's';
-                const fill = document.getElementById('readingFill');
-                if (fill) fill.style.width = Math.max(0, (remaining / total) * 100) + '%';
-                if (remaining <= 0) {
-                    clearInterval(interval);
-                    onDone();
-                }
-            }, 1000);
+
+            startListeningReadingBar(dur, 'reading2Fill', () => {
+                fadeListeningReadingBar('reading2Fill');
+                setTimeout(() => startAudio2(), 400);
+            });
+        }
+
+        function toggleListeningReview() {
+            const el = document.getElementById('mcqReviewCollapsible');
+            if (el) el.classList.toggle('open');
+        }
+
+        function renderListeningMatchingHtml() {
+            const md = listeningMatchingData;
+            if (!md || !md.items || md.items.length === 0) {
+                return `<p style="color:#9ca3af; text-align:center; padding:14px;">No matching items.</p>`;
+            }
+            const items = md.items || [];
+            const options = md.options || [];
+
+            let optionsHtml = '';
+            options.forEach(opt => {
+                optionsHtml += `
+                    <div class="wb-chip" data-opt-id="${escapeHtml(opt.id)}"
+                         onpointerdown="listenStartDrag(event, '${escapeHtml(opt.id)}')">
+                        ${escapeHtml(opt.text)}
+                    </div>
+                `;
+            });
+
+            let itemsHtml = '';
+            items.forEach(item => {
+                const assigned = listeningMatchingAnswers[item.id];
+                const found = options.find(o => o.id === assigned);
+                const assignedText = assigned ? (found ? found.text : assigned) : '_____';
+                const filledClass = assigned ? 'wb-blank-filled' : '';
+                itemsHtml += `
+                    <div class="wb-sentence">
+                        <span class="wb-num">${escapeHtml(item.id)}.</span>
+                        <span class="wb-text">${escapeHtml(item.text)}
+                            <span class="wb-blank ${filledClass}"
+                                  data-item-id="${escapeHtml(item.id)}"
+                                  onclick="removeListeningMatching('${escapeHtml(item.id)}')">
+                                ${escapeHtml(assignedText)}
+                            </span>
+                        </span>
+                    </div>
+                `;
+            });
+
+            return `
+                <div class="wb-word-bank">
+                    <div class="wb-bank-label">📦 Options</div>
+                    <div class="wb-bank-chips">${optionsHtml}</div>
+                </div>
+                <div class="wb-sentences">${itemsHtml}</div>
+            `;
+        }
+
+        function removeListeningMatching(itemId) {
+            delete listeningMatchingAnswers[itemId];
+            const target = document.getElementById('listeningMatchingList');
+            if (target) target.innerHTML = renderListeningMatchingHtml();
+        }
+
+        let listeningDragged = null;
+        let listeningDragGhost = null;
+
+        function listenStartDrag(event, optId) {
+            event.preventDefault();
+            listeningDragged = optId;
+            listeningDragGhost = document.createElement('div');
+            listeningDragGhost.className = 'wb-drag-ghost';
+            const md = listeningMatchingData || {};
+            const opt = (md.options || []).find(o => o.id === optId);
+            listeningDragGhost.textContent = opt ? opt.text : optId;
+            document.body.appendChild(listeningDragGhost);
+            const rect = event.target.getBoundingClientRect();
+            const dx = event.clientX - rect.left;
+            const dy = event.clientY - rect.top;
+            listeningDragGhost.style.left = (event.clientX - dx) + 'px';
+            listeningDragGhost.style.top = (event.clientY - dy) + 'px';
+            listeningDragGhost.dataset.dx = dx;
+            listeningDragGhost.dataset.dy = dy;
+            event.target.classList.add('wb-chip-dragging');
+            document.addEventListener('pointermove', listeningPointerMove);
+            document.addEventListener('pointerup', listeningPointerUp);
+            document.addEventListener('pointercancel', listeningPointerUp);
+        }
+
+        function listeningPointerMove(event) {
+            if (!listeningDragged || !listeningDragGhost) return;
+            event.preventDefault();
+            const dx = parseFloat(listeningDragGhost.dataset.dx) || 0;
+            const dy = parseFloat(listeningDragGhost.dataset.dy) || 0;
+            listeningDragGhost.style.left = (event.clientX - dx) + 'px';
+            listeningDragGhost.style.top = (event.clientY - dy) + 'px';
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
+            const under = document.elementFromPoint(event.clientX, event.clientY);
+            const blank = under?.closest?.('.wb-blank');
+            if (blank && !blank.classList.contains('wb-blank-filled')) {
+                blank.classList.add('wb-blank-over');
+            }
+        }
+
+        function listeningPointerUp(event) {
+            if (!listeningDragged) return;
+            event.preventDefault();
+            document.removeEventListener('pointermove', listeningPointerMove);
+            document.removeEventListener('pointerup', listeningPointerUp);
+            document.removeEventListener('pointercancel', listeningPointerUp);
+            if (listeningDragGhost) { listeningDragGhost.remove(); listeningDragGhost = null; }
+            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
+            document.querySelectorAll('.wb-chip').forEach(c => c.classList.remove('wb-chip-dragging'));
+            const under = document.elementFromPoint(event.clientX, event.clientY);
+            const blank = under?.closest?.('.wb-blank');
+            if (blank && !blank.classList.contains('wb-blank-filled')) {
+                const itemId = blank.dataset.itemId;
+                listeningMatchingAnswers[itemId] = listeningDragged;
+                listeningDragged = null;
+                const target = document.getElementById('listeningMatchingList');
+                if (target) target.innerHTML = renderListeningMatchingHtml();
+                return;
+            }
+            listeningDragged = null;
         }
 
         async function startAudio1() {
             listeningStage = 'AUDIO_1';
 
-            updateListeningTop(`
-                <div style="text-align:center;">
-                    <div style="font-size:44px; margin-bottom:6px;">🎧</div>
-                    <h1 style="color:#60a5fa; font-size:18px; font-weight:700; margin:0 0 6px 0;">Listening — 1 of 2</h1>
-                    <p style="color:#9ca3af; font-size:12px; margin:0 0 12px 0;">Listen carefully. Do not refresh.</p>
-                    <div class="academic-progress-bar" style="width:80%; margin:0 auto;">
-                        <div id="audioFill" class="academic-progress-fill" style="width:0%; background:#34d399;"></div>
+            // Replace the reading bar with the audio wave
+            const topArea = document.getElementById('listeningTopArea');
+            const mainTimerBox = document.getElementById('listeningMainTimer');
+            // Find the reading bar wrap by ID and swap it for the wave
+            const readingWrap = document.getElementById('reading1FillWrap');
+            if (readingWrap) {
+                readingWrap.outerHTML = `
+                    <div style="text-align:center; margin: 8px 0 16px 0;">
+                        <div style="color:#34d399; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:4px;">Listening — 1 of 2</div>
+                        ${listeningAudioWaveHtml()}
                     </div>
-                </div>
-            `);
+                `;
+            }
 
             const audio = new Audio(listeningAudioUrl);
             audio.controls = false;
-            audio.addEventListener('timeupdate', () => {
-                if (audio.duration > 0) {
-                    const pct = (audio.currentTime / audio.duration) * 100;
-                    const fill = document.getElementById('audioFill');
-                    if (fill) fill.style.width = pct + '%';
-                }
-            });
             audio.addEventListener('ended', () => {
-                startTimer();
-                renderStudentQuestion();
+                listeningAudio1Played = true;
+                setTimeout(() => startReading2(), 800);
             });
             audio.addEventListener('error', () => {
                 showError('Could not play audio. Please try again.');
@@ -3395,32 +3636,23 @@
 
         async function startAudio2() {
             listeningStage = 'AUDIO_2';
-            await playListeningAudioInternal(2, () => {
-                showMatchingStage();
-            });
-        }
 
-        async function playListeningAudioInternal(playNumber, onDone) {
-            document.querySelector('.exam-card').innerHTML = `
-                <div style="padding: 40px 24px; text-align: center;">
-                    <div style="font-size: 64px; margin-bottom: 16px;">🎧</div>
-                    <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 8px 0;">Listening — ${playNumber} of 2</h1>
-                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 24px 0;">Listen carefully. Do not refresh.</p>
-                    <div class="academic-progress-bar" style="width: 80%; margin: 0 auto;">
-                        <div id="audioFill" class="academic-progress-fill" style="width: 0%; background: #34d399;"></div>
+            const readingWrap = document.getElementById('reading2FillWrap');
+            if (readingWrap) {
+                readingWrap.outerHTML = `
+                    <div style="text-align:center; margin: 8px 0 16px 0;">
+                        <div style="color:#34d399; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:4px;">Listening — 2 of 2</div>
+                        ${listeningAudioWaveHtml()}
                     </div>
-                </div>
-            `;
+                `;
+            }
+
             const audio = new Audio(listeningAudioUrl);
             audio.controls = false;
-            audio.addEventListener('timeupdate', () => {
-                if (audio.duration > 0) {
-                    const pct = (audio.currentTime / audio.duration) * 100;
-                    const fill = document.getElementById('audioFill');
-                    if (fill) fill.style.width = pct + '%';
-                }
+            audio.addEventListener('ended', () => {
+                listeningAudio2Played = true;
+                setTimeout(() => renderListeningFinalStage(), 800);
             });
-            audio.addEventListener('ended', () => { onDone(); });
             audio.addEventListener('error', () => {
                 showError('Could not play audio. Please try again.');
             });
@@ -3430,6 +3662,8 @@
                 showError('Could not start audio. Please tap the button again.');
             }
         }
+
+ 
 
         // ============================================================
         // MCQ STUDENT VIEW (existing)
@@ -3626,6 +3860,37 @@
             if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
             renderStudentResult(data.result, wasAutoSubmitted);
         }
+        function renderListeningResult(result) {
+            const score = result.score;
+            const total = result.total_questions;
+            const mcqScore = result.mcq_score || 0;
+            const mcqTotal = result.mcq_total || 0;
+            const matchScore = result.matching_score || 0;
+            const matchTotal = result.matching_total || 0;
+            const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 32px 24px; text-align: center;">
+                    <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
+                    <h1 style="color: #60a5fa; font-size: 24px; font-weight: 700; margin: 0 0 8px 0;">Exam Completed</h1>
+                    <p style="color: #9ca3af; font-size: 13px; margin: 0 0 24px 0;">Your result has been sent to the teacher.</p>
+
+                    <div style="font-size: 56px; font-weight: 800; color: #f9fafb; margin: 16px 0;">${score} / ${total}</div>
+                    <div style="font-size: 28px; font-weight: 700; color: #34d399; margin-bottom: 24px;">${percentage}%</div>
+
+                    <div class="listening-result-breakdown">
+                        <div class="listening-result-breakdown-item">
+                            <div class="listening-result-breakdown-num">${mcqScore}/${mcqTotal}</div>
+                            <div class="listening-result-breakdown-label">MCQ</div>
+                        </div>
+                        <div class="listening-result-breakdown-item">
+                            <div class="listening-result-breakdown-num">${matchScore}/${matchTotal}</div>
+                            <div class="listening-result-breakdown-label">Matching</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
         function renderStudentResult(result, wasAutoSubmitted) {
             const score = result.score;
@@ -3647,153 +3912,104 @@
         // ============================================================
         // LISTENING — Matching + Submit
         // ============================================================
+        
 
-        function showMatchingStage() {
-            listeningStage = 'MATCHING';
-            if (!listeningMatchingData || !listeningMatchingData.items || listeningMatchingData.items.length === 0) {
-                submitListeningExam();
-                return;
-            }
-            renderMatchingStage();
-        }
-
-        function renderMatchingStage() {
-            const md = listeningMatchingData;
-            const items = md.items || [];
-            const options = md.options || [];
-            const instructions = md.instructions || 'Match each item with the correct option.';
-
-            let optionsHtml = '';
-            options.forEach(opt => {
-                optionsHtml += `
-                    <div class="wb-chip" data-opt-id="${escapeHtml(opt.id)}"
-                         onpointerdown="listenStartDrag(event, '${escapeHtml(opt.id)}')">
-                        ${escapeHtml(opt.text)}
-                    </div>
-                `;
-            });
-
-            let itemsHtml = '';
-            items.forEach(item => {
-                const assigned = listeningMatchingAnswers[item.id];
-                const found = options.find(o => o.id === assigned);
-                const assignedText = assigned ? (found ? found.text : assigned) : '_____';
-                const filledClass = assigned ? 'wb-blank-filled' : '';
-                itemsHtml += `
-                    <div class="wb-sentence">
-                        <span class="wb-num">${escapeHtml(item.id)}.</span>
-                        <span class="wb-text">${escapeHtml(item.text)}
-                            <span class="wb-blank ${filledClass}"
-                                  data-item-id="${escapeHtml(item.id)}"
-                                  onclick="removeMatchingAssignment('${escapeHtml(item.id)}')">
-                                ${escapeHtml(assignedText)}
-                            </span>
-                        </span>
-                    </div>
-                `;
-            });
-
-            document.querySelector('.exam-card').style.overflow = 'visible';
-            document.querySelector('.exam-card').innerHTML = `
-                <div class="wb-wrapper">
-                    <div class="wb-inner">
-                        <div class="wb-header">
-                            <h1 class="wb-title">Matching</h1>
-                            <span class="academic-timer" id="academicTimer">${formatTime(remainingSeconds)}</span>
-                        </div>
-                        <p class="wb-exam-title">${escapeHtml(exam.title)}</p>
-                        <div class="wb-instruction">${escapeHtml(instructions)}</div>
-                        <div class="wb-word-bank">
-                            <div class="wb-bank-label">📦 Options</div>
-                            <div class="wb-bank-chips">${optionsHtml}</div>
-                        </div>
-                        <div class="wb-sentences">${itemsHtml}</div>
-                        <button class="academic-primary-btn wb-submit-btn" onclick="submitListeningExam()">
-                            ✓ Submit Exam
-                        </button>
-                        <div id="examStatus" class="wb-status"></div>
-                    </div>
-                </div>
-            `;
-        }
-
-        let listenDragged = null;
-        let listenDragGhost = null;
-
-        function listenStartDrag(event, optId) {
+             function listenPointerUp(event) {
+            if (!listeningDragged) return;
             event.preventDefault();
-            listenDragged = optId;
-            listenDragGhost = document.createElement('div');
-            listenDragGhost.className = 'wb-drag-ghost';
-            listenDragGhost.textContent = optId;
-            document.body.appendChild(listenDragGhost);
-            const rect = event.target.getBoundingClientRect();
-            const dx = event.clientX - rect.left;
-            const dy = event.clientY - rect.top;
-            listenDragGhost.style.left = (event.clientX - dx) + 'px';
-            listenDragGhost.style.top = (event.clientY - dy) + 'px';
-            listenDragGhost.dataset.dx = dx;
-            listenDragGhost.dataset.dy = dy;
-            event.target.classList.add('wb-chip-dragging');
-            document.addEventListener('pointermove', listenPointerMove);
-            document.addEventListener('pointerup', listenPointerUp);
-            document.addEventListener('pointercancel', listenPointerUp);
-        }
-
-        function listenPointerMove(event) {
-            if (!listenDragged || !listenDragGhost) return;
-            event.preventDefault();
-            const dx = parseFloat(listenDragGhost.dataset.dx) || 0;
-            const dy = parseFloat(listenDragGhost.dataset.dy) || 0;
-            listenDragGhost.style.left = (event.clientX - dx) + 'px';
-            listenDragGhost.style.top = (event.clientY - dy) + 'px';
-            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
-            const under = document.elementFromPoint(event.clientX, event.clientY);
-            const blank = under?.closest?.('.wb-blank');
-            if (blank && !blank.classList.contains('wb-blank-filled')) {
-                blank.classList.add('wb-blank-over');
-            }
-        }
-
-        function listenPointerUp(event) {
-            if (!listenDragged) return;
-            event.preventDefault();
-            document.removeEventListener('pointermove', listenPointerMove);
-            document.removeEventListener('pointerup', listenPointerUp);
-            document.removeEventListener('pointercancel', listenPointerUp);
-            if (listenDragGhost) { listenDragGhost.remove(); listenDragGhost = null; }
+            document.removeEventListener('pointermove', listeningPointerMove);
+            document.removeEventListener('pointerup', listeningPointerUp);
+            document.removeEventListener('pointercancel', listeningPointerUp);
+            if (listeningDragGhost) { listeningDragGhost.remove(); listeningDragGhost = null; }
             document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
             document.querySelectorAll('.wb-chip').forEach(c => c.classList.remove('wb-chip-dragging'));
             const under = document.elementFromPoint(event.clientX, event.clientY);
             const blank = under?.closest?.('.wb-blank');
             if (blank && !blank.classList.contains('wb-blank-filled')) {
                 const itemId = blank.dataset.itemId;
-                listeningMatchingAnswers[itemId] = listenDragged;
-                listenDragged = null;
-                renderMatchingStage();
+                listeningMatchingAnswers[itemId] = listeningDragged;
+                listeningDragged = null;
+                const target = document.getElementById('listeningMatchingList');
+                if (target) target.innerHTML = renderListeningMatchingHtml();
                 return;
             }
-            listenDragged = null;
-            renderMatchingStage();
+            listeningDragged = null;
         }
 
-        function removeMatchingAssignment(itemId) {
-            delete listeningMatchingAnswers[itemId];
-            renderMatchingStage();
+
+
+
+        function renderListeningFinalStage() {
+            listeningStage = 'FINAL';
+
+            document.querySelector('.exam-card').innerHTML = `
+                <div style="padding: 16px 20px;">
+                    ${listeningMainTimerHtml()}
+
+                    <div class="listening-final-countdown" id="listeningFinalCountdownBox">
+                        <div style="color:#fbbf24; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px;">Final Check</div>
+                        <div class="listening-final-countdown-num" id="listeningFinalCountdownNum">10</div>
+                        <div style="color:#9ca3af; font-size:12px; margin-top:4px;">Review your answers. Auto-submit when it reaches 0.</div>
+                    </div>
+
+                    <div class="listening-collapsible" id="mcqReviewCollapsible">
+                        <div class="listening-collapsible-header" onclick="toggleListeningReview()">
+                            <span>📋 Review Questions (${questions.length})</span>
+                            <span class="listening-collapsible-arrow">▸</span>
+                        </div>
+                        <div class="listening-collapsible-body">
+                            ${renderListeningMcqCards()}
+                        </div>
+                    </div>
+
+                    <div style="color:#60a5fa; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin:18px 0 10px 0; padding-bottom:8px; border-bottom:1px solid #374151;">
+                        Matching
+                    </div>
+                    <div id="listeningMatchingList">${renderListeningMatchingHtml()}</div>
+
+                    <button class="academic-primary-btn wb-submit-btn" style="width:100%; margin-top:16px;" onclick="submitListeningExam()">
+                        ✓ Submit Exam
+                    </button>
+                    <div id="examStatus" class="wb-status"></div>
+                </div>
+            `;
+
+            // 10-second countdown
+            let remaining = 10;
+            const numEl = document.getElementById('listeningFinalCountdownNum');
+            listeningCountdownInterval = setInterval(() => {
+                remaining--;
+                if (numEl) numEl.textContent = remaining;
+                if (remaining <= 0) {
+                    clearInterval(listeningCountdownInterval);
+                    listeningCountdownInterval = null;
+                    submitListeningExam();
+                }
+            }, 1000);
         }
+
 
         async function submitListeningExam() {
             if (isSubmitting) return;
+
+            // Clear countdown if active
+            if (listeningCountdownInterval) {
+                clearInterval(listeningCountdownInterval);
+                listeningCountdownInterval = null;
+            }
+
             const confirmed = confirm('Are you sure you want to submit?');
             if (!confirmed) return;
+
             isSubmitting = true;
             listeningStage = 'SUBMITTING';
             const statusEl = document.getElementById('examStatus');
             if (statusEl) statusEl.textContent = 'Submitting...';
+
             try {
                 const payload = {
                     exam_id: Number(examId),
-                    answers: studentAnswers,
+                    answers: listeningMcqAnswers,
                     matching_answers: listeningMatchingAnswers,
                     started_at: startedAt
                 };
@@ -3809,16 +4025,18 @@
                 }
                 const data = await response.json();
                 if (data.status !== 'success') throw new Error(data.message || 'Failed.');
+
                 if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+                if (listeningMainTimerInterval) { clearInterval(listeningMainTimerInterval); listeningMainTimerInterval = null; }
+
                 listeningStage = 'COMPLETED';
-                renderStudentResult(data.result, false);
+                renderListeningResult(data.result);
             } catch (error) {
                 isSubmitting = false;
-                listeningStage = 'MATCHING';
+                listeningStage = 'FINAL';
                 if (statusEl) statusEl.textContent = error.message || 'Could not submit.';
             }
         }
-
                // ============================================================
         // WORD BANK — RENDER + DRAG & DROP
         // ============================================================
