@@ -1591,13 +1591,14 @@ body {
     flex-direction: column !important;
     flex-wrap: nowrap !important;
     gap: 8px !important;
+    align-items: flex-start !important;
 }
 
 /* Each option chip: full width, left-aligned, wraps text */
 
 .wb-chip-listening {
-    width: 100%;
-    box-sizing: border-box;
+    width: fit-content;
+    max-width: 100%;
     text-align: left;
     padding: 10px 14px;
     line-height: 1.4;
@@ -1608,7 +1609,6 @@ body {
     user-select: none;
     -webkit-touch-callout: none;
 }
-
 
 
 
