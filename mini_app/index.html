@@ -3507,6 +3507,24 @@
                 fadeListeningReadingBar('reading1Fill');
                 setTimeout(() => startAudio1(), 400);
             });
+            // Teacher preview: Skip to Matching
+            if (isPreviewMode) {
+                const container = document.querySelector('.exam-card > div');
+                if (container) {
+                    const btn = document.createElement('button');
+                    btn.className = 'academic-secondary-btn';
+                    btn.style.cssText = 'width:100%; margin-top:16px;';
+                    btn.textContent = '⏭ Skip to Matching (Preview only)';
+                    btn.onclick = () => {
+                        fadeListeningReadingBar('reading1Fill');
+                        setTimeout(() => {
+                            listeningMatchingData = exam.matching || null;
+                            startReading2();
+                        }, 200);
+                    };
+                    container.appendChild(btn);
+                }
+            }
         }
 
         function startReading2() {
@@ -3546,6 +3564,22 @@
                 fadeListeningReadingBar('reading2Fill');
                 setTimeout(() => startAudio2(), 400);
             });
+            // Teacher preview: Skip to Final
+            if (isPreviewMode) {
+                const container = document.querySelector('.exam-card > div');
+                if (container) {
+                    const btn = document.createElement('button');
+                    btn.className = 'academic-secondary-btn';
+                    btn.style.cssText = 'width:100%; margin-top:16px;';
+                    btn.textContent = '⏭ Skip to Final (Preview only)';
+                    btn.onclick = () => {
+                        fadeListeningReadingBar('reading2Fill');
+                        setTimeout(() => renderListeningFinalStage(), 200);
+                    };
+                    container.appendChild(btn);
+                }
+            }
+
         }
 
         function toggleListeningReview() {
@@ -3626,108 +3660,182 @@
         let listeningDragged = null;
         let listeningDragGhost = null;
 	let listeningHoveredBlank = null;
+        let listeningActivePointerId = null;
+        let listeningDragSource = null;
 
+      
         function listenStartDrag(event, optId) {
+            // جلوگیری از شروع درگ همزمان
+            if (listeningDragged !== null) return;
+
+            const chip = event.currentTarget;
+            if (!chip) return;
+            if (chip.classList.contains('wb-chip-used')) return;
+
             event.preventDefault();
+
             listeningDragged = optId;
             listeningHoveredBlank = null;
+            listeningDragSource = chip;
+            listeningActivePointerId = event.pointerId;
+
+            // ساخت شبح (Ghost)
             listeningDragGhost = document.createElement('div');
             listeningDragGhost.className = 'wb-drag-ghost';
             const md = listeningMatchingData || {};
             const opt = (md.options || []).find(o => o.id === optId);
             listeningDragGhost.textContent = opt ? opt.text : optId;
-            document.body.appendChild(listeningDragGhost);
-            const rect = event.target.getBoundingClientRect();
+
+            const rect = chip.getBoundingClientRect();
             const dx = event.clientX - rect.left;
             const dy = event.clientY - rect.top;
+
             listeningDragGhost.style.left = (event.clientX - dx) + 'px';
             listeningDragGhost.style.top = (event.clientY - dy) + 'px';
             listeningDragGhost.dataset.dx = dx;
             listeningDragGhost.dataset.dy = dy;
-            event.target.classList.add('wb-chip-dragging');
-            document.addEventListener('pointermove', listeningPointerMove);
-            document.addEventListener('pointerup', listeningPointerUp);
-            document.addEventListener('pointercancel', listeningPointerUp);
-            debugLog('START_DRAG', { optId: optId, text: opt ? opt.text : null });
-        }
+            document.body.appendChild(listeningDragGhost);
 
+            chip.classList.add('wb-chip-dragging');
+
+            // اتصال رویدادها
+            document.addEventListener('pointermove', listeningPointerMove, { passive: false });
+            document.addEventListener('pointerup', listeningPointerUp);
+            document.addEventListener('pointercancel', listeningPointerCancel);
+
+            // قفل کردن اشاره‌گر (Pointer Capture)
+            try {
+                chip.setPointerCapture(event.pointerId);
+            } catch (e) {
+                debugLog('POINTER_CAPTURE_FAILED', { message: e.message });
+            }
+
+            debugLog('START_DRAG', { optId: optId, pointerType: event.pointerType });
+        }
        
 
         function listeningPointerMove(event) {
-            if (!listeningDragged || !listeningDragGhost) return;
+            if (listeningDragged === null || !listeningDragGhost) return;
+            
+            // اطمینان از اینکه رویداد از طرف همان انگشتی است که درگ را شروع کرده
+            if (listeningActivePointerId !== null && event.pointerId !== listeningActivePointerId) return;
+
             event.preventDefault();
-            const dx = parseFloat(listeningDragGhost.dataset.dx) || 0;
-            const dy = parseFloat(listeningDragGhost.dataset.dy) || 0;
+
+            const dx = Number(listeningDragGhost.dataset.dx) || 0;
+            const dy = Number(listeningDragGhost.dataset.dy) || 0;
+
             listeningDragGhost.style.left = (event.clientX - dx) + 'px';
             listeningDragGhost.style.top = (event.clientY - dy) + 'px';
 
-            // Highlight based on coordinates (more reliable than elementFromPoint)
-            const cx = event.clientX;
-            const cy = event.clientY;
             let found = null;
 
-            document.querySelectorAll('.wb-blank').forEach(b => {
-                b.classList.remove('wb-blank-over');
-                if (b.classList.contains('wb-blank-filled')) return;
-                const r = b.getBoundingClientRect();
-                if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-                    b.classList.add('wb-blank-over');
-                    found = b;
+            // بررسی فقط باکس‌های خالی در بخش Listening
+            document.querySelectorAll('#listeningMatchingList .wb-blank').forEach(blank => {
+                blank.classList.remove('wb-blank-over');
+
+                if (blank.classList.contains('wb-blank-filled')) return;
+
+                const rect = blank.getBoundingClientRect();
+                if (
+                    event.clientX >= rect.left &&
+                    event.clientX <= rect.right &&
+                    event.clientY >= rect.top &&
+                    event.clientY <= rect.bottom
+                ) {
+                    found = blank;
                 }
             });
+
+            if (found) {
+                found.classList.add('wb-blank-over');
+            }
 
             listeningHoveredBlank = found;
-            debugLog('POINTER_MOVE', {
-                x: cx, y: cy,
-                found: !!found,
-                blankId: found ? found.dataset.itemId : null
-            });
+            // لاگ کردن هر حرکت انگشت حذف شد تا سرور شلوغ نشود
         }
        
-        function listeningPointerUp(event) {
-            if (!listeningDragged) return;
-            debugLog('POINTER_UP_ENTER', { dragged: listeningDragged });
-            event.preventDefault();
+        function cleanupListeningDrag() {
             document.removeEventListener('pointermove', listeningPointerMove);
             document.removeEventListener('pointerup', listeningPointerUp);
-            document.removeEventListener('pointercancel', listeningPointerUp);
-            if (listeningDragGhost) { listeningDragGhost.remove(); listeningDragGhost = null; }
-            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
-            document.querySelectorAll('.wb-chip').forEach(c => c.classList.remove('wb-chip-dragging'));
+            document.removeEventListener('pointercancel', listeningPointerCancel);
 
-            // Find blank by coordinates — reliable across all WebViews
-            const cx = event.clientX;
-            const cy = event.clientY;
-            let targetBlank = null;
-
-            document.querySelectorAll('.wb-blank').forEach(b => {
-                if (b.classList.contains('wb-blank-filled')) return;
-                const r = b.getBoundingClientRect();
-                if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-                    targetBlank = b;
-                }
-            });
-
-            debugLog('POINTER_UP', {
-                x: cx, y: cy,
-                foundByCoords: !!targetBlank,
-                blankId: targetBlank ? targetBlank.dataset.itemId : null
-            });
-
-            if (targetBlank) {
-                const itemId = targetBlank.dataset.itemId;
-                if (itemId) {
-                    listeningMatchingAnswers[itemId] = listeningDragged;
-                }
-                listeningDragged = null;
-                listeningHoveredBlank = null;
-                const target = document.getElementById('listeningMatchingList');
-                if (target) target.innerHTML = renderListeningMatchingHtml();
-                return;
+            if (listeningDragSource && listeningActivePointerId !== null) {
+                try {
+                    if (listeningDragSource.hasPointerCapture(listeningActivePointerId)) {
+                        listeningDragSource.releasePointerCapture(listeningActivePointerId);
+                    }
+                } catch (e) { /* ignore */ }
             }
+
+            if (listeningDragGhost) {
+                listeningDragGhost.remove();
+                listeningDragGhost = null;
+            }
+
+            document.querySelectorAll('#listeningMatchingList .wb-blank-over').forEach(b => b.classList.remove('wb-blank-over'));
+            document.querySelectorAll('#listeningMatchingList .wb-chip-dragging').forEach(c => c.classList.remove('wb-chip-dragging'));
+
             listeningDragged = null;
             listeningHoveredBlank = null;
+            listeningActivePointerId = null;
+            listeningDragSource = null;
         }
+
+        function findListeningDropTarget(x, y) {
+            const element = document.elementFromPoint(x, y);
+            const candidate = element ? element.closest('#listeningMatchingList .wb-blank') : null;
+            
+            if (candidate && !candidate.classList.contains('wb-blank-filled')) {
+                return candidate;
+            }
+            
+            let found = null;
+            document.querySelectorAll('#listeningMatchingList .wb-blank').forEach(blank => {
+                if (blank.classList.contains('wb-blank-filled')) return;
+                const rect = blank.getBoundingClientRect();
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                    found = blank;
+                }
+            });
+            return found;
+        }
+
+        function listeningPointerUp(event) {
+            if (listeningDragged === null) return;
+            if (listeningActivePointerId !== null && event.pointerId !== listeningActivePointerId) return;
+
+            event.preventDefault();
+
+            const x = event.clientX;
+            const y = event.clientY;
+            const targetBlank = findListeningDropTarget(x, y);
+            const optId = listeningDragged;
+
+            debugLog('POINTER_UP', { x: x, y: y, found: !!targetBlank, itemId: targetBlank ? targetBlank.dataset.itemId : null });
+
+            cleanupListeningDrag();
+
+            if (!targetBlank) return;
+            
+            const itemId = targetBlank.dataset.itemId;
+            if (!itemId) return;
+            if (targetBlank.classList.contains('wb-blank-filled')) return;
+
+            listeningMatchingAnswers[itemId] = optId;
+            const target = document.getElementById('listeningMatchingList');
+            if (target) target.innerHTML = renderListeningMatchingHtml();
+        }
+
+        function listeningPointerCancel(event) {
+            if (listeningDragged === null) return;
+            if (listeningActivePointerId !== null && event.pointerId !== listeningActivePointerId) return;
+
+            debugLog('POINTER_CANCEL', { pointerId: event.pointerId, x: event.clientX, y: event.clientY });
+            cleanupListeningDrag();
+        }        
+
+
         
 
         async function startAudio1() {

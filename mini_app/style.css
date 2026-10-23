@@ -1594,6 +1594,7 @@ body {
 }
 
 /* Each option chip: full width, left-aligned, wraps text */
+
 .wb-chip-listening {
     width: 100%;
     box-sizing: border-box;
@@ -1602,7 +1603,14 @@ body {
     line-height: 1.4;
     word-break: break-word;
     cursor: grab;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
+
+
+
 
 .wb-chip-listening.wb-chip-used {
     cursor: not-allowed;
