@@ -3460,11 +3460,16 @@ def get_listening_audio(exam_id):
 
     connection = get_database_connection()
     try:
-        student = find_student_by_telegram_id(telegram_user["id"], connection)
-        if student is None:
-            return jsonify({"status": "error", "message": "Student account is not registered."}), 403
-        if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
-            return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403
+        # Teacher can preview any exam's audio (bypasses student/group checks)
+        if not is_teacher(telegram_user["id"]):
+            student = find_student_by_telegram_id(telegram_user["id"], connection)
+            if student is None:
+                return jsonify({"status": "error", "message": "Student account is not registered."}), 403
+            if not check_exam_access(student["id"], student["group_id"], exam_id, connection):
+                return jsonify({"status": "error", "message": "You do not have access to this exam."}), 403 
+
+
+
 
         cursor = connection.cursor()
         cursor.execute(
