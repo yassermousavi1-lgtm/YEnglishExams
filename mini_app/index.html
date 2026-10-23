@@ -3783,6 +3783,9 @@
         }
 
         function findListeningDropTarget(x, y) {
+            const TOLERANCE = 40; // حاشیه تحمل ۴۰ پیکسلی برای انگشت موبایل
+
+            // ابتدا تلاش با elementFromPoint
             const element = document.elementFromPoint(x, y);
             const candidate = element ? element.closest('#listeningMatchingList .wb-blank') : null;
             
@@ -3790,14 +3793,36 @@
                 return candidate;
             }
             
+            // تلاش با محاسبه مختصات و حاشیه تحمل
             let found = null;
+            let debugBlanks = [];
+            
             document.querySelectorAll('#listeningMatchingList .wb-blank').forEach(blank => {
                 if (blank.classList.contains('wb-blank-filled')) return;
                 const rect = blank.getBoundingClientRect();
-                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                
+                debugBlanks.push({
+                    id: blank.dataset.itemId,
+                    top: Math.round(rect.top), left: Math.round(rect.left),
+                    right: Math.round(rect.right), bottom: Math.round(rect.bottom)
+                });
+
+                if (
+                    x >= rect.left - TOLERANCE && x <= rect.right + TOLERANCE &&
+                    y >= rect.top - TOLERANCE && y <= rect.bottom + TOLERANCE
+                ) {
                     found = blank;
                 }
             });
+
+            // اگر باز هم پیدا نشد، لاگ می‌فرستیم تا بفهمیم فاصله چقدر بوده
+            if (!found) {
+                debugLog('DROP_MISSED', {
+                    touchX: x, touchY: y,
+                    blanks: debugBlanks
+                });
+            }
+
             return found;
         }
 
