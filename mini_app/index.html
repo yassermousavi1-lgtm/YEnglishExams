@@ -3606,10 +3606,12 @@
 
         let listeningDragged = null;
         let listeningDragGhost = null;
+	let listeningHoveredBlank = null;
 
         function listenStartDrag(event, optId) {
             event.preventDefault();
             listeningDragged = optId;
+            listeningHoveredBlank = null;
             listeningDragGhost = document.createElement('div');
             listeningDragGhost.className = 'wb-drag-ghost';
             const md = listeningMatchingData || {};
@@ -3636,11 +3638,18 @@
             const dy = parseFloat(listeningDragGhost.dataset.dy) || 0;
             listeningDragGhost.style.left = (event.clientX - dx) + 'px';
             listeningDragGhost.style.top = (event.clientY - dy) + 'px';
+
+            // Clear previous highlight
             document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
+
+            // Find element under finger
             const under = document.elementFromPoint(event.clientX, event.clientY);
             const blank = under?.closest?.('.wb-blank');
             if (blank && !blank.classList.contains('wb-blank-filled')) {
                 blank.classList.add('wb-blank-over');
+                listeningHoveredBlank = blank;
+            } else {
+                listeningHoveredBlank = null;
             }
         }
 
@@ -3653,11 +3662,21 @@
             if (listeningDragGhost) { listeningDragGhost.remove(); listeningDragGhost = null; }
             document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
             document.querySelectorAll('.wb-chip').forEach(c => c.classList.remove('wb-chip-dragging'));
-            const under = document.elementFromPoint(event.clientX, event.clientY);
-            const blank = under?.closest?.('.wb-blank');
+
+            // Use the blank we hovered over during pointermove (more reliable)
+            let blank = listeningHoveredBlank;
+            if (!blank || !document.contains(blank)) {
+                const under = document.elementFromPoint(event.clientX, event.clientY);
+                blank = under?.closest?.('.wb-blank') || null;
+            }
+
+            listeningHoveredBlank = null;
+
             if (blank && !blank.classList.contains('wb-blank-filled')) {
                 const itemId = blank.dataset.itemId;
-                listeningMatchingAnswers[itemId] = listeningDragged;
+                if (itemId) {
+                    listeningMatchingAnswers[itemId] = listeningDragged;
+                }
                 listeningDragged = null;
                 const target = document.getElementById('listeningMatchingList');
                 if (target) target.innerHTML = renderListeningMatchingHtml();
@@ -3665,6 +3684,7 @@
             }
             listeningDragged = null;
         }
+        
 
         async function startAudio1() {
             listeningStage = 'AUDIO_1';
