@@ -3645,6 +3645,7 @@
         }
 
         function removeListeningMatching(itemId) {
+            if (listeningJustDropped) return;
             debugLog('REMOVE_CALLED', {
                 itemId: itemId,
                 currentAnswer: listeningMatchingAnswers[itemId],
@@ -3661,6 +3662,7 @@
         let listeningDragGhost = null;
 	let listeningHoveredBlank = null;
         let listeningActivePointerId = null;
+        let listeningJustDropped = false;
         let listeningDragSource = null;
 
       
@@ -3848,6 +3850,8 @@
             if (targetBlank.classList.contains('wb-blank-filled')) return;
 
             listeningMatchingAnswers[itemId] = optId;
+            listeningJustDropped = true;
+            setTimeout(() => { listeningJustDropped = false; }, 300);
             const target = document.getElementById('listeningMatchingList');
             if (target) target.innerHTML = renderListeningMatchingHtml();
         }
