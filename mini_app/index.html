@@ -3651,6 +3651,8 @@
             debugLog('START_DRAG', { optId: optId, text: opt ? opt.text : null });
         }
 
+       
+
         function listeningPointerMove(event) {
             if (!listeningDragged || !listeningDragGhost) return;
             event.preventDefault();
@@ -3659,23 +3661,32 @@
             listeningDragGhost.style.left = (event.clientX - dx) + 'px';
             listeningDragGhost.style.top = (event.clientY - dy) + 'px';
 
-            // Clear previous highlight
-            document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
+            // Highlight based on coordinates (more reliable than elementFromPoint)
+            const cx = event.clientX;
+            const cy = event.clientY;
+            let found = null;
 
-            // Find element under finger
-            const under = document.elementFromPoint(event.clientX, event.clientY);
-            const blank = under?.closest?.('.wb-blank');
-            if (blank && !blank.classList.contains('wb-blank-filled')) {
-                blank.classList.add('wb-blank-over');
-                listeningHoveredBlank = blank;
-            } else {
-                listeningHoveredBlank = null;
-            }
+            document.querySelectorAll('.wb-blank').forEach(b => {
+                b.classList.remove('wb-blank-over');
+                if (b.classList.contains('wb-blank-filled')) return;
+                const r = b.getBoundingClientRect();
+                if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+                    b.classList.add('wb-blank-over');
+                    found = b;
+                }
+            });
+
+            listeningHoveredBlank = found;
+            debugLog('POINTER_MOVE', {
+                x: cx, y: cy,
+                found: !!found,
+                blankId: found ? found.dataset.itemId : null
+            });
         }
-
+       
         function listeningPointerUp(event) {
             if (!listeningDragged) return;
-            debugLog('POINTER_UP_ENTER', { dragged: listeningDragged, hasGhost: !!listeningDragGhost });
+            debugLog('POINTER_UP_ENTER', { dragged: listeningDragged });
             event.preventDefault();
             document.removeEventListener('pointermove', listeningPointerMove);
             document.removeEventListener('pointerup', listeningPointerUp);
@@ -3684,32 +3695,38 @@
             document.querySelectorAll('.wb-blank').forEach(b => b.classList.remove('wb-blank-over'));
             document.querySelectorAll('.wb-chip').forEach(c => c.classList.remove('wb-chip-dragging'));
 
-            // Use the blank we hovered over during pointermove (more reliable)
-            let blank = listeningHoveredBlank;
-            if (!blank || !document.contains(blank)) {
-                const under = document.elementFromPoint(event.clientX, event.clientY);
-                blank = under?.closest?.('.wb-blank') || null;
-            }
-            debugLog('POINTER_UP_BLANK', {
-                usedHovered: !!listeningHoveredBlank,
-                blankFound: !!blank,
-                blankItemId: blank ? blank.dataset.itemId : null,
-                blankClass: blank ? blank.className : null,
-                blankFilled: blank ? blank.classList.contains('wb-blank-filled') : null
-            });
-            listeningHoveredBlank = null;
+            // Find blank by coordinates — reliable across all WebViews
+            const cx = event.clientX;
+            const cy = event.clientY;
+            let targetBlank = null;
 
-            if (blank && !blank.classList.contains('wb-blank-filled')) {
-                const itemId = blank.dataset.itemId;
+            document.querySelectorAll('.wb-blank').forEach(b => {
+                if (b.classList.contains('wb-blank-filled')) return;
+                const r = b.getBoundingClientRect();
+                if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+                    targetBlank = b;
+                }
+            });
+
+            debugLog('POINTER_UP', {
+                x: cx, y: cy,
+                foundByCoords: !!targetBlank,
+                blankId: targetBlank ? targetBlank.dataset.itemId : null
+            });
+
+            if (targetBlank) {
+                const itemId = targetBlank.dataset.itemId;
                 if (itemId) {
                     listeningMatchingAnswers[itemId] = listeningDragged;
                 }
                 listeningDragged = null;
+                listeningHoveredBlank = null;
                 const target = document.getElementById('listeningMatchingList');
                 if (target) target.innerHTML = renderListeningMatchingHtml();
                 return;
             }
             listeningDragged = null;
+            listeningHoveredBlank = null;
         }
         
 
