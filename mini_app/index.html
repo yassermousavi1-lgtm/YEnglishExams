@@ -2017,6 +2017,7 @@
                     return;
                 }
                 exam = data.exam;
+
                 if (data.exam.exam_type === 'word_bank') {
                     wordBankQuestions = data.word_bank_questions || [];
                     if (wordBankQuestions.length === 0) {
@@ -2027,6 +2028,27 @@
                     renderWordBankView(true);
                     return;
                 }
+
+                if (data.exam.exam_type === 'listening') {
+                    questions = data.questions || [];
+                    if (questions.length === 0) {
+                        showError('This exam has no questions.');
+                        return;
+                    }
+                    currentQuestionIndex = 0;
+                    studentAnswers = {};
+                    examId = data.exam.id;
+                    remainingSeconds = Number(exam.time_limit) * 60;
+                    startedAt = new Date().toISOString();
+                    listeningMcqAnswers = {};
+                    listeningMatchingAnswers = {};
+                    listeningMatchingData = exam.matching || null;
+                    listeningAudioUrl = null;
+                    listeningStage = 'PREPARING';
+                    await startListeningPrep();
+                    return;
+                }
+
                 questions = data.questions || [];
                 if (questions.length === 0) {
                     showError('This exam has no questions.');
@@ -2040,6 +2062,7 @@
                 showError('Error loading preview.');
             }
         }
+
 
         function renderPreview() {
             const totalQuestions = questions.length;
@@ -3367,19 +3390,41 @@
             }
         }
 
+            
         function showListeningReadyScreen() {
             listeningStage = 'READY';
+
+            // Different wording for teacher preview vs real student exam
+            const isPreview = !!isPreviewMode;
+
+            const topBanner = isPreview
+                ? `<div class="preview-banner">
+                       <span>⚠️ Preview Mode - Results will NOT be saved</span>
+                       <button class="preview-exit-btn" onclick="exitPreview()">Exit Preview</button>
+                   </div>`
+                : '';
+
+            const introLine = isPreview
+                ? 'This is a preview of the exact flow your students see. Nothing will be saved.'
+                : 'The audio will play twice. Listen carefully.';
+
+            const warningLine = isPreview
+                ? 'You can start the preview now.'
+                : 'Do not close or refresh this page.';
+
+            const buttonLabel = isPreview ? '▶ Start Preview' : '▶ Start Exam';
+
             document.querySelector('.exam-card').innerHTML = `
+                ${topBanner}
                 <div style="padding: 40px 24px; text-align: center;">
                     <div style="font-size: 56px; margin-bottom: 16px;">🎧</div>
                     <h1 style="color: #60a5fa; font-size: 20px; font-weight: 700; margin: 0 0 12px 0;">${escapeHtml(exam.title)}</h1>
-                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 8px 0;">The audio will play twice. Listen carefully.</p>
-                    <p style="color: #fbbf24; font-size: 13px; margin: 0 0 24px 0;">Do not close or refresh this page.</p>
-                    <button class="academic-primary-btn" style="width: 100%;" onclick="startListeningExam()">▶ Start Exam</button>
+                    <p style="color: #9ca3af; font-size: 14px; margin: 0 0 8px 0;">${escapeHtml(introLine)}</p>
+                    <p style="color: #fbbf24; font-size: 13px; margin: 0 0 24px 0;">${escapeHtml(warningLine)}</p>
+                    <button class="academic-primary-btn" style="width: 100%;" onclick="startListeningExam()">${buttonLabel}</button>
                 </div>
             `;
-        }     
-
+        }
 
         function listeningMcqListHtml() {
             if (!questions || questions.length === 0) return '';
@@ -4007,6 +4052,58 @@
                 listeningCountdownInterval = null;
             }
 
+            // ============================================================
+            // PREVIEW MODE: do NOT submit, just show a preview summary.
+            // ============================================================
+            if (isPreviewMode) {
+                // Stop any running timers
+                if (listeningMainTimerInterval) { clearInterval(listeningMainTimerInterval); listeningMainTimerInterval = null; }
+                if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+
+                // Count answers
+                let mcqAnswered = 0;
+                Object.keys(listeningMcqAnswers || {}).forEach(k => {
+                    if (listeningMcqAnswers[k]) mcqAnswered++;
+                });
+                let matchAnswered = 0;
+                Object.keys(listeningMatchingAnswers || {}).forEach(k => {
+                    if (listeningMatchingAnswers[k]) matchAnswered++;
+                });
+                const matchTotal = (listeningMatchingData && listeningMatchingData.items) ? listeningMatchingData.items.length : 0;
+
+                document.querySelector('.exam-card').innerHTML = `
+                    <div style="padding: 0;">
+                        <div class="preview-banner">
+                            <span>⚠️ Preview Mode - Results will NOT be saved</span>
+                            <button class="preview-exit-btn" onclick="exitPreview()">Exit Preview</button>
+                        </div>
+                        <div style="padding: 40px 24px; text-align: center;">
+                            <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
+                            <h1 style="color: #60a5fa; font-size: 22px; font-weight: 700; margin: 0 0 8px 0;">Preview Completed!</h1>
+                            <p style="color: #9ca3af; font-size: 14px; margin: 0 0 24px 0;">(No results were saved)</p>
+
+                            <div class="academic-card" style="text-align: left; margin-bottom: 16px;">
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #374151;">
+                                    <span style="color: #9ca3af;">MCQ answered</span>
+                                    <span style="color: #f9fafb; font-weight: 700;">${mcqAnswered} / ${questions.length}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                                    <span style="color: #9ca3af;">Matching answered</span>
+                                    <span style="color: #f9fafb; font-weight: 700;">${matchAnswered} / ${matchTotal}</span>
+                                </div>
+                            </div>
+
+                            <button class="academic-primary-btn" style="width: 100%;" onclick="exitPreview()">Exit Preview</button>
+                        </div>
+                    </div>
+                `;
+                listeningStage = 'COMPLETED';
+                return;
+            }
+
+            // ============================================================
+            // NORMAL MODE: submit to server (student flow)
+            // ============================================================
             const confirmed = confirm('Are you sure you want to submit?');
             if (!confirmed) return;
 
@@ -4045,7 +4142,7 @@
                 listeningStage = 'FINAL';
                 if (statusEl) statusEl.textContent = error.message || 'Could not submit.';
             }
-        }
+        }        
                // ============================================================
         // WORD BANK — RENDER + DRAG & DROP
         // ============================================================
