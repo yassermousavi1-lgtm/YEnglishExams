@@ -3610,10 +3610,10 @@
                 optionsHtml += `
                     <div class="wb-chip${usedClass} wb-chip-listening" data-opt-id="${escapeHtml(opt.id)}"
                          ${dragAttr}>
-                        ${escapeHtml(opt.text)}
+                        <span style="pointer-events: none;">${escapeHtml(opt.text)}</span>
                     </div>
                 `;
-            });
+            });           
 
             let itemsHtml = '';
             items.forEach(item => {
