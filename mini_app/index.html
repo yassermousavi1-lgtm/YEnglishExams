@@ -3548,11 +3548,21 @@
             const items = md.items || [];
             const options = md.options || [];
 
+            // Build a set of option ids that are already used in a blank
+            const usedOptionIds = new Set();
+            Object.keys(listeningMatchingAnswers || {}).forEach(itemId => {
+                const optId = listeningMatchingAnswers[itemId];
+                if (optId) usedOptionIds.add(optId);
+            });
+
             let optionsHtml = '';
             options.forEach(opt => {
+                const isUsed = usedOptionIds.has(opt.id);
+                const usedClass = isUsed ? ' wb-chip-used' : '';
+                const dragAttr = isUsed ? '' : `onpointerdown="listenStartDrag(event, '${escapeHtml(opt.id)}')"`;
                 optionsHtml += `
-                    <div class="wb-chip" data-opt-id="${escapeHtml(opt.id)}"
-                         onpointerdown="listenStartDrag(event, '${escapeHtml(opt.id)}')">
+                    <div class="wb-chip${usedClass} wb-chip-listening" data-opt-id="${escapeHtml(opt.id)}"
+                         ${dragAttr}>
                         ${escapeHtml(opt.text)}
                     </div>
                 `;
@@ -3581,11 +3591,12 @@
             return `
                 <div class="wb-word-bank">
                     <div class="wb-bank-label">📦 Options</div>
-                    <div class="wb-bank-chips">${optionsHtml}</div>
+                    <div class="wb-bank-chips wb-bank-chips-listening">${optionsHtml}</div>
                 </div>
                 <div class="wb-sentences">${itemsHtml}</div>
             `;
         }
+
 
         function removeListeningMatching(itemId) {
             delete listeningMatchingAnswers[itemId];
