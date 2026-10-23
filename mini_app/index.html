@@ -393,6 +393,19 @@
             }
         }
 
+        // ============================================================
+        // DEBUG MATCHING — temporary, remove after fixing
+        // ============================================================
+        function debugLog(label, data) {
+            try {
+                const text = '[DEBUG_MATCHING] ' + label + ' | ' + JSON.stringify(data);
+                reportError('debug', text.slice(0, 1500), '');
+            } catch (e) { /* ignore */ }
+        }
+        // ============================================================
+        // END DEBUG MATCHING
+        // ============================================================
+
         window.addEventListener('error', function (event) {
             try {
                 // Ignore errors originating from Telegram's own script.
@@ -3597,12 +3610,18 @@
             `;
         }
 
-
         function removeListeningMatching(itemId) {
+            debugLog('REMOVE_CALLED', {
+                itemId: itemId,
+                currentAnswer: listeningMatchingAnswers[itemId],
+                stack: (new Error()).stack ? (new Error()).stack.split('\n').slice(1, 4).join(' <- ') : 'no-stack'
+            });
             delete listeningMatchingAnswers[itemId];
             const target = document.getElementById('listeningMatchingList');
             if (target) target.innerHTML = renderListeningMatchingHtml();
         }
+
+
 
         let listeningDragged = null;
         let listeningDragGhost = null;
@@ -3629,6 +3648,7 @@
             document.addEventListener('pointermove', listeningPointerMove);
             document.addEventListener('pointerup', listeningPointerUp);
             document.addEventListener('pointercancel', listeningPointerUp);
+            debugLog('START_DRAG', { optId: optId, text: opt ? opt.text : null });
         }
 
         function listeningPointerMove(event) {
@@ -3655,6 +3675,7 @@
 
         function listeningPointerUp(event) {
             if (!listeningDragged) return;
+            debugLog('POINTER_UP_ENTER', { dragged: listeningDragged, hasGhost: !!listeningDragGhost });
             event.preventDefault();
             document.removeEventListener('pointermove', listeningPointerMove);
             document.removeEventListener('pointerup', listeningPointerUp);
@@ -3669,7 +3690,13 @@
                 const under = document.elementFromPoint(event.clientX, event.clientY);
                 blank = under?.closest?.('.wb-blank') || null;
             }
-
+            debugLog('POINTER_UP_BLANK', {
+                usedHovered: !!listeningHoveredBlank,
+                blankFound: !!blank,
+                blankItemId: blank ? blank.dataset.itemId : null,
+                blankClass: blank ? blank.className : null,
+                blankFilled: blank ? blank.classList.contains('wb-blank-filled') : null
+            });
             listeningHoveredBlank = null;
 
             if (blank && !blank.classList.contains('wb-blank-filled')) {
