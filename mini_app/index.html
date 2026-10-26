@@ -3606,7 +3606,7 @@
             options.forEach(opt => {
                 const isUsed = usedOptionIds.has(opt.id);
                 const usedClass = isUsed ? ' wb-chip-used' : '';
-                const dragAttr = isUsed ? '' : `onpointerdown="listenStartDrag(event, '${escapeHtml(opt.id)}')"`;
+                const dragAttr = isUsed ? '' : `onpointerdown="listenStartDrag(event)"`;
                 optionsHtml += `
                     <div class="wb-chip${usedClass} wb-chip-listening" data-opt-id="${escapeHtml(opt.id)}"
                          ${dragAttr}>
@@ -3666,8 +3666,9 @@
         let listeningDragSource = null;
 
       
-        function listenStartDrag(event, optId) {
+            function listenStartDrag(event) {
             // جلوگیری از شروع درگ همزمان
+            const optId = event.currentTarget.dataset.optId;
             if (listeningDragged !== null) return;
 
             const chip = event.currentTarget;
@@ -4575,7 +4576,7 @@
                     <div class="wb-chip${isUsed ? ' wb-chip-used' : ''}" 
                          data-word="${escapeHtml(word)}"
                          data-qid="${wbId}"
-                         ${isUsed ? '' : `onpointerdown="wbStartDrag(event, '${escapeHtml(word)}', '${wbId}')"`}>
+                        ${isUsed ? '' : `onpointerdown="wbStartDrag(event)"`}>
                         ${escapeHtml(word)}
                     </div>
                 `;
@@ -4635,7 +4636,10 @@
         // Drag & Drop via Pointer Events (works on mobile + desktop)
         // ------------------------------------------------------------
 
-        function wbStartDrag(event, word, qid) {
+            function wbStartDrag(event) {
+            const el = event.currentTarget;
+            const word = el.dataset.word;
+            const qid = el.dataset.qid;
             event.preventDefault();
             wbDragged = { word: word, qid: qid };
 
